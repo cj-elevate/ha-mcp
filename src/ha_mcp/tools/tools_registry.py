@@ -16,6 +16,12 @@ from typing import Annotated, Any
 from pydantic import Field
 
 from .helpers import log_tool_usage
+import asyncio
+import os
+import platform
+import tempfile
+import time
+import urllib.request
 from .util_helpers import coerce_bool_param, parse_string_list_param
 
 # Known voice assistant identifiers
@@ -382,6 +388,396 @@ def register_registry_tools(mcp: Any, client: Any, **kwargs: Any) -> None:
             icon=icon,
             preserve_voice_exposure=should_preserve_exposure,
         )
+    # Icon cache configuration - use proper runtime directory
+    def _get_cache_dir() -> str:
+        """Get platform-appropriate cache directory."""
+        if platform.system() == "Windows":
+            base = os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))
+            cache_dir = os.path.join(base, "ha-mcp", "cache")
+        else:
+            base = os.environ.get("XDG_CACHE_HOME", os.path.expanduser("~/.cache"))
+            cache_dir = os.path.join(base, "ha-mcp")
+        os.makedirs(cache_dir, exist_ok=True)
+        return cache_dir
+
+    ICON_CACHE_PATH = os.path.join(_get_cache_dir(), "mdi_icons.json")
+    ICON_CACHE_MAX_AGE = 7 * 24 * 60 * 60  # 7 days in seconds
+    ICON_CDN_URL = "https://cdn.jsdelivr.net/npm/@mdi/svg@latest/meta.json"
+
+    # Cache state for error tracking
+    _icon_cache_error: str | None = None
+
+    def _load_icon_cache() -> tuple[list[dict] | None, str | None]:
+        """Load icons from cache if valid. Returns (icons, error_message)."""
+        try:
+            if os.path.exists(ICON_CACHE_PATH):
+                cache_age = time.time() - os.path.getmtime(ICON_CACHE_PATH)
+                if cache_age < ICON_CACHE_MAX_AGE:
+                    import json
+                    with open(ICON_CACHE_PATH, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        if isinstance(data, list) and len(data) > 0:
+                            return data, None
+                        return None, "Cache file is empty or invalid"
+        except json.JSONDecodeError as e:
+            return None, f"Cache file corrupted: {e}"
+        except PermissionError as e:
+            return None, f"Permission denied reading cache: {e}"
+        except Exception as e:
+            return None, f"Error loading cache: {e}"
+        return None, None  # Cache expired or doesn't exist
+
+    def _download_icon_cache_sync() -> tuple[list[dict] | None, str | None]:
+        """Download icon metadata from CDN (blocking). Returns (icons, error_message)."""
+        try:
+            import json
+            logger.info(f"Downloading MDI icon metadata from {ICON_CDN_URL}")
+            with urllib.request.urlopen(ICON_CDN_URL, timeout=30) as response:
+                data = json.loads(response.read().decode("utf-8"))
+
+                if not isinstance(data, list) or len(data) == 0:
+                    return None, "Downloaded data is empty or invalid"
+
+                # Atomic write: write to temp file, then replace
+                cache_dir = os.path.dirname(ICON_CACHE_PATH)
+                os.makedirs(cache_dir, exist_ok=True)
+
+                fd, temp_path = tempfile.mkstemp(dir=cache_dir, suffix=".json")
+                try:
+                    with os.fdopen(fd, "w", encoding="utf-8") as f:
+                        json.dump(data, f)
+                    os.replace(temp_path, ICON_CACHE_PATH)
+                    logger.info(f"Cached {len(data)} icons to {ICON_CACHE_PATH}")
+                except Exception as e:
+                    # Clean up temp file on error
+                    if os.path.exists(temp_path):
+                        os.unlink(temp_path)
+                    raise e
+
+                return data, None
+        except urllib.error.URLError as e:
+            return None, f"Network error downloading icons: {e}"
+        except json.JSONDecodeError as e:
+            return None, f"Invalid JSON from CDN: {e}"
+        except PermissionError as e:
+            return None, f"Permission denied writing cache: {e}"
+        except Exception as e:
+            logger.error(f"Failed to download icon metadata: {e}")
+            return None, f"Download failed: {e}"
+
+    async def _download_icon_cache() -> tuple[list[dict] | None, str | None]:
+        """Download icon metadata from CDN (async-safe)."""
+        return await asyncio.to_thread(_download_icon_cache_sync)
+
+    async def _get_icons() -> tuple[list[dict], str | None]:
+        """Get icons from cache or download. Returns (icons, error_message)."""
+        global _icon_cache_error
+
+        icons, error = _load_icon_cache()
+        if icons is not None:
+            _icon_cache_error = None
+            return icons, None
+
+        if error:
+            logger.warning(f"Cache load issue: {error}")
+
+        # Try downloading
+        icons, error = await _download_icon_cache()
+        if icons is not None:
+            _icon_cache_error = None
+            return icons, None
+
+        _icon_cache_error = error
+        return [], error
+
+    @mcp.tool(
+        annotations={
+            "readOnlyHint": True,
+            "idempotentHint": True,
+            "tags": ["system"],
+            "title": "Search Icons",
+        }
+    )
+    @log_tool_usage
+    async def ha_search_icons(
+        query: Annotated[
+            str,
+            Field(description="Search term (e.g., 'flood', 'outdoor', 'light')"),
+        ],
+        limit: Annotated[
+            int,
+            Field(
+                description="Maximum results to return (default: 20)",
+                default=20,
+            ),
+        ] = 20,
+    ) -> dict[str, Any]:
+        """
+        Search Material Design Icons (MDI) by keyword.
+
+        Returns matching icon names in mdi:icon-name format ready for ha_update_entity.
+        Icons are cached locally and refreshed weekly from the CDN.
+
+        EXAMPLES:
+        - ha_search_icons("flood") -> ["mdi:light-flood-down", "mdi:light-flood-up", ...]
+        - ha_search_icons("outdoor") -> ["mdi:outdoor-lamp", ...]
+        - ha_search_icons("motion sensor") -> ["mdi:motion-sensor", ...]
+
+        COMMON SEARCHES:
+        - Lighting: light, lamp, bulb, ceiling, floor, wall, sconce
+        - Security: lock, shield, cctv, alarm, motion
+        - Climate: fan, thermometer, temperature, humidity
+        - Automation: robot, home, play, timer
+        """
+        try:
+            icons, error = await _get_icons()
+            if not icons:
+                return {
+                    "success": False,
+                    "error": error or "Failed to load icon database",
+                    "suggestion": "Check network connectivity or try again later",
+                }
+
+            # Search by query terms
+            query_terms = query.lower().split()
+            matches = []
+
+            for icon in icons:
+                name = icon.get("name", "").lower()
+                # Match if all query terms appear in the icon name
+                if all(term in name for term in query_terms):
+                    matches.append(f"mdi:{icon['name']}")
+
+            # Sort by relevance (shorter names first, exact matches prioritized)
+            matches.sort(key=lambda x: (len(x), x))
+            matches = matches[:limit]
+
+            return {
+                "success": True,
+                "query": query,
+                "count": len(matches),
+                "total_icons": len(icons),
+                "icons": matches,
+                "usage": "Use these with ha_update_entity(entity_id, icon='mdi:icon-name')",
+            }
+
+        except Exception as e:
+            logger.error(f"Error searching icons: {e}")
+            return {
+                "success": False,
+                "error": f"Icon search failed: {str(e)}",
+            }
+
+    @mcp.tool(
+        annotations={
+            "readOnlyHint": True,
+            "idempotentHint": True,
+            "tags": ["system"],
+            "title": "Validate Icon",
+        }
+    )
+    @log_tool_usage
+    async def ha_validate_icon(
+        icon: Annotated[
+            str,
+            Field(description="Icon to validate (e.g., 'mdi:home' or 'home')"),
+        ],
+    ) -> dict[str, Any]:
+        """
+        Check if an MDI icon name is valid.
+
+        Returns whether the icon exists and suggests alternatives if not.
+
+        EXAMPLES:
+        - ha_validate_icon("mdi:home") -> {"valid": true, ...}
+        - ha_validate_icon("mdi:flood-light") -> {"valid": false, "suggestions": [...]}
+        """
+        try:
+            icons, error = await _get_icons()
+            if not icons:
+                return {
+                    "success": False,
+                    "error": error or "Failed to load icon database",
+                    "suggestion": "Check network connectivity or try again later",
+                }
+
+            # Normalize input
+            icon_name = icon.replace("mdi:", "").lower()
+            icon_names = {i["name"].lower(): i["name"] for i in icons}
+
+            if icon_name in icon_names:
+                return {
+                    "success": True,
+                    "valid": True,
+                    "icon": f"mdi:{icon_names[icon_name]}",
+                    "message": f"Icon 'mdi:{icon_names[icon_name]}' exists",
+                }
+            else:
+                # Find similar icons
+                suggestions = []
+                for name in icon_names:
+                    # Check if any word from the query is in the icon name
+                    if any(word in name for word in icon_name.split("-")):
+                        suggestions.append(f"mdi:{icon_names[name]}")
+                        if len(suggestions) >= 10:
+                            break
+
+                return {
+                    "success": True,
+                    "valid": False,
+                    "icon": icon,
+                    "message": f"Icon '{icon}' does not exist",
+                    "suggestions": suggestions[:10] if suggestions else None,
+                    "tip": "Use ha_search_icons() to find valid icons",
+                }
+
+        except Exception as e:
+            logger.error(f"Error validating icon: {e}")
+            return {
+                "success": False,
+                "error": f"Icon validation failed: {str(e)}",
+            }
+
+    @mcp.tool(
+        annotations={
+            "idempotentHint": True,
+            "tags": ["system"],
+            "title": "Update Entity",
+        }
+    )
+    @log_tool_usage
+    async def ha_update_entity(
+        entity_id: Annotated[
+            str,
+            Field(description="Entity ID to update (e.g., 'automation.motion_light')"),
+        ],
+        icon: Annotated[
+            str | None,
+            Field(
+                description="New icon (e.g., 'mdi:lightbulb', 'mdi:robot-vacuum', 'mdi:flood-light')",
+                default=None,
+            ),
+        ] = None,
+        name: Annotated[
+            str | None,
+            Field(
+                description="New friendly name for the entity",
+                default=None,
+            ),
+        ] = None,
+    ) -> dict[str, Any]:
+        """
+        Update entity properties like icon or friendly name without renaming.
+
+        Use this to set custom icons or change display names.
+        Does NOT change the entity_id - use ha_rename_entity() for that.
+
+        ICON FORMAT:
+        Icons use Material Design Icons (MDI) format: 'mdi:icon-name'
+        Browse available icons at: https://pictogrammers.com/library/mdi/
+
+        COMMON ICONS:
+        - Lights: mdi:lightbulb, mdi:lamp, mdi:ceiling-light, mdi:flood-light
+        - Sensors: mdi:thermometer, mdi:water-percent, mdi:motion-sensor
+        - Security: mdi:lock, mdi:shield-home, mdi:cctv
+        - Climate: mdi:fan, mdi:air-conditioner, mdi:thermostat
+        - Automation: mdi:robot, mdi:home-automation, mdi:play-circle
+
+        EXAMPLES:
+        - Set icon: ha_update_entity("automation.motion_light", icon="mdi:motion-sensor")
+        - Set name: ha_update_entity("light.bedroom", name="Master Bedroom Light")
+        - Both: ha_update_entity("switch.pump", icon="mdi:water-pump", name="Pool Pump")
+        """
+        try:
+            if not icon and not name:
+                return {
+                    "success": False,
+                    "error": "At least one of 'icon' or 'name' must be provided",
+                    "suggestion": "Use icon='mdi:icon-name' or name='Friendly Name'",
+                }
+
+            # Validate icon format
+            if icon and not icon.startswith("mdi:"):
+                return {
+                    "success": False,
+                    "error": f"Invalid icon format: {icon}",
+                    "expected_format": "mdi:icon-name (e.g., 'mdi:lightbulb')",
+                    "suggestion": "Browse icons at https://pictogrammers.com/library/mdi/",
+                }
+
+            # Validate icon exists in MDI library
+            if icon:
+                icons, _ = await _get_icons()
+                if icons:
+                    icon_name = icon.replace("mdi:", "").lower()
+                    valid_names = {i["name"].lower() for i in icons}
+                    if icon_name not in valid_names:
+                        # Find suggestions
+                        suggestions = [f"mdi:{i['name']}" for i in icons
+                                      if any(w in i["name"].lower() for w in icon_name.split("-"))][:5]
+                        return {
+                            "success": False,
+                            "error": f"Icon '{icon}' does not exist",
+                            "suggestions": suggestions if suggestions else None,
+                            "tip": "Use ha_search_icons() to find valid icons",
+                        }
+
+            # Build the WebSocket message
+            message: dict[str, Any] = {
+                "type": "config/entity_registry/update",
+                "entity_id": entity_id,
+            }
+
+            updates_made = []
+            if icon is not None:
+                message["icon"] = icon
+                updates_made.append(f"icon='{icon}'")
+            if name is not None:
+                message["name"] = name
+                updates_made.append(f"name='{name}'")
+
+            logger.info(f"Updating entity {entity_id}: {', '.join(updates_made)}")
+            result = await client.send_websocket_message(message)
+
+            if result.get("success"):
+                entity_entry = result.get("result", {}).get("entity_entry", {})
+                return {
+                    "success": True,
+                    "entity_id": entity_id,
+                    "updates": updates_made,
+                    "entity_entry": {
+                        "entity_id": entity_entry.get("entity_id"),
+                        "name": entity_entry.get("name"),
+                        "icon": entity_entry.get("icon"),
+                        "platform": entity_entry.get("platform"),
+                    },
+                    "message": f"Entity updated: {', '.join(updates_made)}",
+                }
+            else:
+                error = result.get("error", {})
+                error_msg = (
+                    error.get("message", str(error))
+                    if isinstance(error, dict)
+                    else str(error)
+                )
+                return {
+                    "success": False,
+                    "error": f"Failed to update entity: {error_msg}",
+                    "entity_id": entity_id,
+                    "suggestions": [
+                        "Verify the entity exists using ha_search_entities()",
+                        "Check that the entity has a unique_id (some legacy entities cannot be updated)",
+                    ],
+                }
+
+        except Exception as e:
+            logger.error(f"Error updating entity: {e}")
+            return {
+                "success": False,
+                "error": f"Entity update failed: {str(e)}",
+                "entity_id": entity_id,
+            }
+
     @mcp.tool(
         annotations={
             "destructiveHint": True,

@@ -140,6 +140,45 @@ Spend less time configuring, more time enjoying your smart home.
 
 ---
 
+## 🔐 Platform Authentication Notes
+
+This platform uses **two MCP servers** for Home Assistant access:
+
+### ha-mcp-extended (this server)
+- **Purpose:** 101 tools for HA Core API operations (entities, services, automations, etc.)
+- **Authentication:** Long-Lived Access Token (configured in `.env`)
+- **Usage:** Direct tool calls like `ha_get_state`, `ha_call_service`, `ha_config_set_automation`
+
+### ssh-ha MCP server
+- **Purpose:** Shell command execution for custom operations not in ha-mcp
+- **Authentication:** SSH key + API tokens via wrapper scripts
+- **Usage:** Commands via `ssh-ha.exec` or `ssh-ha.sudo-exec`
+
+### Helper Scripts on HA Server
+
+Two wrapper scripts are provided at `/root/scripts/` for correct API access:
+
+**For Home Assistant Core API (entities, services):**
+```bash
+/root/scripts/ha-core-curl /api/services
+/root/scripts/ha-core-curl /api/states/sun.sun
+```
+
+**For Supervisor API (add-ons, backups, host info):**
+```bash
+/root/scripts/ha-supervisor-curl /info
+/root/scripts/ha-supervisor-curl /backups
+```
+
+### Quick Reference
+
+| Need | API | Base URL | Token Source |
+|------|-----|----------|---------------|
+| Entities, services, states | **Core API** | `http://192.168.1.3:8123/api` | `$HA_TOKEN` from `/homeassistant/.ha_api_token` |
+| Add-ons, backups, host | **Supervisor API** | `http://supervisor` | `$SUPERVISOR_TOKEN` environment variable |
+
+---
+
 ## 🤝 Contributing
 
 For development setup, testing instructions, and contribution guidelines, see **[CONTRIBUTING.md](CONTRIBUTING.md)**.

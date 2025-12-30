@@ -95,7 +95,7 @@ class SmartSearchTools:
                 "success": True,
                 "query": query,
                 "total_matches": len(matches),
-                "matches": results,  # Changed from 'results' to 'matches' for consistency
+                "matches": results,
                 "search_metadata": {
                     "fuzzy_threshold": self.settings.fuzzy_threshold,
                     "best_match_score": matches[0]["score"] if matches else 0,

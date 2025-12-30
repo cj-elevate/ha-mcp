@@ -44,11 +44,6 @@ class FuzzyEntitySearcher:
         """
         Search entities with fuzzy matching and intelligent scoring.
 
-        OPTIMIZED: Uses tiered search to prevent hanging on large entity lists.
-        1. Exact match shortcut (immediate return)
-        2. Substring pre-filtering (reduces candidates before expensive fuzzy matching)
-        3. Fallback to full search if pre-filter finds nothing
-
         Args:
             entities: List of Home Assistant entity states
             query: Search query (can be partial, with typos)
@@ -60,86 +55,16 @@ class FuzzyEntitySearcher:
         if not query or not entities:
             return []
 
+        matches = []
         query_lower = query.lower().strip()
 
-        # --- TIER 1: Exact Match Shortcut (Instant Return) ---
-        # If user typed exact entity_id, return immediately without fuzzy matching
-        for entity in entities:
-            entity_id = entity.get("entity_id", "")
-            if entity_id.lower() == query_lower:
-                attributes = entity.get("attributes", {})
-                friendly_name = attributes.get("friendly_name") or entity_id  # Guard against None
-                domain = entity_id.split(".")[0] if "." in entity_id else ""
-                return [{
-                    "entity_id": entity_id,
-                    "friendly_name": friendly_name,
-                    "domain": domain,
-                    "state": entity.get("state", "unknown"),
-                    "attributes": attributes,
-                    "score": 100,
-                    "match_type": "exact_id",
-                }]
-
-        # --- TIER 1.5: Domain Fast-Path (Critical Optimization) ---
-        # If query exactly matches a domain name (light, sensor, switch, etc.),
-        # return all entities from that domain immediately without fuzzy matching.
-        # This prevents candidate explosion for common domain queries.
-        for entity in entities:
-            entity_id = entity.get("entity_id", "")
-            if "." in entity_id:
-                domain = entity_id.split(".")[0]
-                if query_lower == domain:
-                    # Found an exact domain match - collect all entities from this domain
-                    matches = []
-                    for e in entities:
-                        e_id = e.get("entity_id", "")
-                        if e_id.startswith(f"{query_lower}."):
-                            attrs = e.get("attributes", {})
-                            fname = attrs.get("friendly_name") or e_id  # Guard against None
-                            matches.append({
-                                "entity_id": e_id,
-                                "friendly_name": fname,
-                                "domain": query_lower,
-                                "state": e.get("state", "unknown"),
-                                "attributes": attrs,
-                                "score": 100,
-                                "match_type": "exact_domain",
-                            })
-                            # Early exit if we have enough
-                            if len(matches) >= limit:
-                                return matches[:limit]
-                    return matches[:limit]
-
-        # --- TIER 2: Substring Pre-filtering (Cheap) ---
-        # Only run expensive fuzzy matching on entities containing the query string
-        # This reduces N from 763 to ~10-50 for most queries
-        candidates = []
         for entity in entities:
             entity_id = entity.get("entity_id", "")
             attributes = entity.get("attributes", {})
-            friendly_name = attributes.get("friendly_name") or entity_id  # Guard against None
+            friendly_name = attributes.get("friendly_name", entity_id)
             domain = entity_id.split(".")[0] if "." in entity_id else ""
 
-            # Check if query appears in entity_id, friendly_name, or domain
-            if (query_lower in entity_id.lower() or
-                query_lower in friendly_name.lower() or
-                query_lower in domain.lower()):
-                candidates.append(entity)
-
-        # --- TIER 3: Fallback ---
-        # If pre-filter was too aggressive (no candidates) or we have very few,
-        # search all entities. Otherwise only search candidates.
-        search_pool = candidates if len(candidates) > 2 else entities
-
-        # --- TIER 4: Expensive Fuzzy Matching on Reduced Pool ---
-        matches = []
-        for entity in search_pool:
-            entity_id = entity.get("entity_id", "")
-            attributes = entity.get("attributes", {})
-            friendly_name = attributes.get("friendly_name") or entity_id  # Guard against None
-            domain = entity_id.split(".")[0] if "." in entity_id else ""
-
-            # Calculate comprehensive score (expensive!)
+            # Calculate comprehensive score
             score = self._calculate_entity_score(
                 entity_id, friendly_name, domain, query_lower
             )
@@ -268,7 +193,7 @@ class FuzzyEntitySearcher:
         for entity in entities:
             entity_id = entity.get("entity_id", "")
             attributes = entity.get("attributes", {})
-            friendly_name = attributes.get("friendly_name") or entity_id  # Guard against None
+            friendly_name = attributes.get("friendly_name", entity_id)
 
             # Check area_id attribute first
             if "area_id" in attributes:
