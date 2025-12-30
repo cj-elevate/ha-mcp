@@ -2,6 +2,94 @@
 
 <!-- version list -->
 
+## v5.0.6 (2025-12-28)
+
+### Bug Fixes
+
+- Exclude jq dependency on all Windows platforms (#371)
+  ([#371](https://github.com/homeassistant-ai/ha-mcp/pull/371),
+  [`f80c76a`](https://github.com/homeassistant-ai/ha-mcp/commit/f80c76a7ab5f50088432812a61857cde4ecef497))
+
+### Chores
+
+- **addon**: Sync changelog for Home Assistant add-on [skip ci]
+  ([`7751dd4`](https://github.com/homeassistant-ai/ha-mcp/commit/7751dd418d276496415834ed57615adf2401ec18))
+
+
+## v5.0.5 (2025-12-24)
+
+### Bug Fixes
+
+- Support blueprint automations in ha_config_set_automation (#364)
+  ([#364](https://github.com/homeassistant-ai/ha-mcp/pull/364),
+  [`163f0ee`](https://github.com/homeassistant-ai/ha-mcp/commit/163f0eedea69f50d72458073bca3d7552500b389))
+
+- **ci**: Clear ignorePaths to allow scanning tests/
+  ([`b363519`](https://github.com/homeassistant-ai/ha-mcp/commit/b363519c2a05fb66bf21d012bedcc9d015f2fc28))
+
+- **ci**: Configure Renovate to only handle HA test container
+  ([`22eefd1`](https://github.com/homeassistant-ai/ha-mcp/commit/22eefd1e71fc63f49e0113647c44ba99e2578d63))
+
+- **ci**: Configure Renovate to scan current repository
+  ([`553917a`](https://github.com/homeassistant-ai/ha-mcp/commit/553917a5603f21474e8040a2cc5d050a48f00975))
+
+- **ci**: Correct regex - match version digits only
+  ([`970c358`](https://github.com/homeassistant-ai/ha-mcp/commit/970c358ab8c260564b98f51dd033f4ca06f58fe5))
+
+- **ci**: Improve renovate regex pattern for HA container version
+  ([`32da751`](https://github.com/homeassistant-ai/ha-mcp/commit/32da7510bcc5f71667f243f0d0f942b44348050a))
+
+- **ci**: Update HA test container and separate Renovate schedule
+  ([`0a4bc2f`](https://github.com/homeassistant-ai/ha-mcp/commit/0a4bc2f2de8fce292dd15afe894a088a5e8dec61))
+
+- **ci**: Use correct manager name custom.regex
+  ([`e8bded1`](https://github.com/homeassistant-ai/ha-mcp/commit/e8bded1d8152e242a7aa91d7c66dd5a8256e3f5d))
+
+- **docs**: Update AGENTS.md with ha-mcp-web command
+  ([`25ddcb7`](https://github.com/homeassistant-ai/ha-mcp/commit/25ddcb7e081bf029022588c82e5aeca260f97179))
+
+- **docs**: Update Docker commands to use ha-mcp-web and remove backslashes
+  ([`90822c0`](https://github.com/homeassistant-ai/ha-mcp/commit/90822c087b18cfb68eb2bc23c062a8494356011a))
+
+### Chores
+
+- **addon**: Sync changelog for Home Assistant add-on [skip ci]
+  ([`bb3c3ed`](https://github.com/homeassistant-ai/ha-mcp/commit/bb3c3ed3c26d442f8782a4618a4e3807b9385355))
+
+### Documentation
+
+- Document hotfix workflow with stable tag verification and timing
+  ([`6bbd782`](https://github.com/homeassistant-ai/ha-mcp/commit/6bbd782ea31fad3e5d4d8aac0a03e26a4ec9a41a))
+
+
+## v5.0.4 (2025-12-23)
+
+### Bug Fixes
+
+- Make jq optional on Windows ARM64 (#359)
+  ([#359](https://github.com/homeassistant-ai/ha-mcp/pull/359),
+  [`6299ae8`](https://github.com/homeassistant-ai/ha-mcp/commit/6299ae87d38ee98148fbcbb15a3f6dad6a8250d0))
+
+### Chores
+
+- **addon**: Sync changelog for Home Assistant add-on [skip ci]
+  ([`0648603`](https://github.com/homeassistant-ai/ha-mcp/commit/0648603d3897a81c616fb52ca548052c960154e1))
+
+
+## v5.0.3 (2025-12-23)
+
+### Bug Fixes
+
+- Resolve Docker environment variable validation error (#354) (#356)
+  ([#356](https://github.com/homeassistant-ai/ha-mcp/pull/356),
+  [`c9c0259`](https://github.com/homeassistant-ai/ha-mcp/commit/c9c0259b8c714a76871da7db2b254fcdaff0a629))
+
+### Chores
+
+- **addon**: Sync changelog for Home Assistant add-on [skip ci]
+  ([`f4a72de`](https://github.com/homeassistant-ai/ha-mcp/commit/f4a72de4ee9227e4d2ce602423330e76aba780ef))
+
+
 ## v5.0.2 (2025-12-22)
 
 ### Bug Fixes

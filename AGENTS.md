@@ -89,11 +89,48 @@ git add . && git commit -m "feat: description"
 6. Repeat until green
 
 ### Hotfix Process (Critical Bugs Only)
-Branch from `stable` tag, not master:
+
+**When to use hotfix vs regular fix:**
+- **Hotfix**: Critical production bug in current stable release that needs immediate patch
+- **Regular fix**: Bug introduced after latest stable release, or non-critical fixes
+
+**Important**: Hotfix branches MUST be based on the `stable` tag. The code you're fixing must exist in stable.
+
+**Before creating a hotfix, verify the code exists in stable:**
+```bash
+# Check what version stable points to
+git fetch --tags --force
+git log -1 --oneline stable
+
+# Verify the buggy code exists in stable
+git show stable:path/to/file.py | grep "buggy_code"
+```
+
+**If the code doesn't exist in stable**, use a regular fix branch from master instead:
+```bash
+# Example: jq dependency added in v5.0.0, but stable was at v4.22.1
+# → Cannot hotfix, must use regular fix branch
+git checkout -b fix/description master
+```
+
+**Creating a hotfix:**
 ```bash
 git checkout -b hotfix/description stable
+# Make your fix
+git add . && git commit -m "fix: description"
 gh pr create --base master
 ```
+
+**Hotfix workflow execution:**
+When hotfix PR merges, `hotfix-release.yml` runs:
+1. Validates branch is based on stable tag
+2. Runs semantic-release (creates version tag, updates CHANGELOG.md)
+3. Creates draft GitHub release
+4. Copies CHANGELOG.md to `homeassistant-addon/` and pushes to master
+5. Updates `stable` tag to point to new release commit
+6. Builds binaries and publishes release
+
+The `stable` tag is updated AFTER the changelog sync, ensuring it points to the exact release commit, not subsequent maintenance commits.
 
 ## CI/CD Workflows
 
@@ -145,7 +182,7 @@ uv run mypy src/
 docker run --rm -i -e HOMEASSISTANT_URL=... -e HOMEASSISTANT_TOKEN=... ghcr.io/homeassistant-ai/ha-mcp:latest
 
 # HTTP mode (web clients)
-docker run -d -p 8086:8086 -e HOMEASSISTANT_URL=... -e HOMEASSISTANT_TOKEN=... ghcr.io/homeassistant-ai/ha-mcp:latest fastmcp run fastmcp-http.json
+docker run -d -p 8086:8086 -e HOMEASSISTANT_URL=... -e HOMEASSISTANT_TOKEN=... ghcr.io/homeassistant-ai/ha-mcp:latest ha-mcp-web
 ```
 
 ## Architecture
@@ -282,9 +319,14 @@ This informs whether to embed docs (low model knowledge) or just hint at `ha_get
 
 ## API Research
 
-Finding undocumented HA APIs (don't clone the huge repo):
+Search HA Core without cloning (500MB+ repo):
 ```bash
-gh api /search/code -X GET -f q="helper list websocket repo:home-assistant/core" -f per_page=5 --jq '.items[] | {name, path, url: .html_url}'
+# Search for patterns
+gh search code "use_blueprint" --repo home-assistant/core path:tests --json path --limit 10
+
+# Fetch file contents (base64 encoded)
+gh api /repos/home-assistant/core/contents/homeassistant/components/automation/config.py \
+  --jq '.content' | base64 -d > /tmp/ha_config.py
 ```
 
 **Insight**: Collection-based components (helpers, scripts, automations) follow consistent patterns.

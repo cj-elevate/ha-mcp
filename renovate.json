@@ -2,13 +2,15 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended"],
   "timezone": "UTC",
-  "schedule": ["after 9am on monday"],
+  "schedule": ["after 3pm on tuesday"],
+  "enabledManagers": ["custom.regex"],
+  "ignorePaths": [],
   "customManagers": [
     {
       "customType": "regex",
       "fileMatch": ["tests/.*\\.py$"],
       "matchStrings": [
-        "#\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)\\s*\\n.*[\"'][^:]+:(?<currentValue>[^\"']+)[\"']"
+        "# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)\\s+.*?\\S+:(?<currentValue>[\\d.]+)"
       ],
       "depNameTemplate": "{{{depName}}}",
       "datasourceTemplate": "{{{datasource}}}"
