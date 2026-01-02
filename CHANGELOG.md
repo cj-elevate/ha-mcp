@@ -6,6 +6,46 @@ All notable changes to this server will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-01-02] - v2 Thread Safety Fixes
+
+### Fixed
+
+- **Thread safety improvements from v1 multi-agent review:**
+  - `registry_cache.py` - Wrap `refresh_task` with `asyncio.shield()` to prevent caller cancellation from killing shared task
+  - `registry_cache.py` - Make `invalidate()` async with lock acquisition before mutating state
+  - `smart_search.py` - Timeout now configurable via `HA_SEARCH_TIMEOUT` env var (default: 5.0s)
+  - `smart_search.py` - Thread pool uses dynamic sizing: `min(32, cpu_count + 4)` instead of fixed 2 workers
+
+---
+
+## [2026-01-02] - v1 Search Performance Optimization
+
+### Performance
+
+- **`ha_search_entities` no longer times out or blocks the event loop**
+  - Root cause: Blocking `get_states()` (700KB) + CPU-heavy Levenshtein on event loop
+  - Fix 1: Use registry cache (140KB, 60s TTL) instead of `get_states()`
+  - Fix 2: Offload fuzzy search to thread pool via `run_in_executor()`
+  - Fix 3: Add 5s timeout wrapper to prevent indefinite hangs
+  - Fix 4: Hybrid approach - fetch live state only for top N results
+
+### Changed
+
+- **fuzzy_search.py now uses rapidfuzz (C++ implementation)**
+  - Added `rapidfuzz>=3.0.0` dependency for 10-100x faster fuzzy matching
+  - Falls back to textdistance if rapidfuzz unavailable (ARM compatibility)
+  - `calculate_ratio()`, `calculate_partial_ratio()`, `calculate_token_sort_ratio()` all use rapidfuzz
+- **smart_search.py architecture overhaul**
+  - Added `ThreadPoolExecutor` for CPU-bound fuzzy operations
+  - Uses `asyncio.wait_for()` with 5s timeout on cache fetch
+  - Returns `cache_stats` in search metadata (hits, misses, hit_rate_percent)
+
+### Reviewed
+
+- **Multi-agent review (Codex, Gemini, Perplexity):** Architecture approved
+
+---
+
 ## [2025-12-26]
 
 ### Added

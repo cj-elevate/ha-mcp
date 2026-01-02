@@ -64,8 +64,13 @@ All tools use `HAError` exception class from `errors.py` with structured error r
 - **Fork of upstream**: Check upstream for updates (`git fetch upstream`)
 - **Rule 05 protection**: Automations require user approval before modification
 - **Long-running token**: Use a long-lived access token, not session tokens
-- **Entity caching**: Entity list is cached; may need restart after HA config changes
+- **Entity caching**: Registry cache has 60s TTL; call `registry_cache.invalidate()` after HA config changes
 - **Async context**: All tools are async; use `await` for client calls
+- **Search performance**: `ha_search_entities` uses:
+  - Registry cache (5x smaller than get_states)
+  - Thread pool for CPU-heavy fuzzy matching
+  - 5s timeout to prevent hangs
+  - rapidfuzz (C++) for 10-100x faster Levenshtein
 
 ---
 

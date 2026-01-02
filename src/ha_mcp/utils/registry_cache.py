@@ -63,10 +63,18 @@ class HARegistryCache:
         self._hits = 0
         self._misses = 0
 
-    def invalidate(self) -> None:
-        """Mark cache as dirty, triggering refresh on next access."""
-        self._dirty = True
-        self._expires_at = 0.0
+    async def invalidate(self) -> None:
+        """Mark cache as dirty, triggering refresh on next access.
+
+        Thread-safe: acquires lock before mutating shared state.
+        """
+        async with self._lock:
+            self._dirty = True
+            self._expires_at = 0.0
+            # Cancel any in-flight refresh to force fresh fetch
+            if self._refresh_task and not self._refresh_task.done():
+                self._refresh_task.cancel()
+                self._refresh_task = None
         logger.debug("Registry cache invalidated")
 
     def _handle_refresh_done(self, task: asyncio.Task) -> None:
@@ -157,7 +165,9 @@ class HARegistryCache:
             return entities
 
         # Wait for refresh to complete
-        return await refresh_task
+        # Shield protects the shared refresh task from caller cancellation
+        # Without this, one cancelled caller would kill the refresh for ALL waiters
+        return await asyncio.shield(refresh_task)
 
     async def _refresh(self) -> list[dict[str, Any]]:
         """Fetch registries and build search-friendly entity list."""

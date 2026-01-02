@@ -1,26 +1,36 @@
 """
 Fuzzy entity search utilities for Home Assistant MCP server.
 
-This module implements lazy loading of the textdistance library to improve
-startup time. The library is only imported when fuzzy search is first used.
+PERFORMANCE OPTIMIZED:
+- Uses rapidfuzz (C++ implementation) instead of textdistance (pure Python)
+- rapidfuzz is ~10-100x faster for Levenshtein operations
+- Falls back to textdistance if rapidfuzz unavailable (ARM compatibility)
 """
 
 import logging
 from collections.abc import Iterable
 from typing import Any
 
-# Lazy loading of textdistance - only import when needed
+logger = logging.getLogger(__name__)
+
+# Try rapidfuzz first (fast C++ implementation), fall back to textdistance
+_USE_RAPIDFUZZ = False
+_rapidfuzz_fuzz = None
 _textdistance = None
 _LEVENSHTEIN = None
 
-logger = logging.getLogger(__name__)
+try:
+    from rapidfuzz import fuzz as _rapidfuzz_fuzz
+    _USE_RAPIDFUZZ = True
+    logger.info("Using rapidfuzz for fuzzy matching (fast C++ implementation)")
+except ImportError:
+    logger.warning("rapidfuzz not available, falling back to textdistance (slower)")
 
 
 def _get_levenshtein() -> Any:
     """Lazily load and return the Levenshtein distance calculator.
 
-    This defers the import of textdistance until first use, which significantly
-    improves startup time for the binary distribution.
+    Only used as fallback when rapidfuzz is not available.
     """
     global _textdistance, _LEVENSHTEIN
     if _LEVENSHTEIN is None:
@@ -388,10 +398,18 @@ def create_fuzzy_searcher(threshold: int = 60) -> FuzzyEntitySearcher:
 
 
 def calculate_ratio(query: str, value: str) -> int:
-    """Return the normalized Levenshtein similarity ratio (0-100)."""
+    """Return the normalized Levenshtein similarity ratio (0-100).
+
+    Uses rapidfuzz if available (10-100x faster), falls back to textdistance.
+    """
     if not query and not value:
         return 100
 
+    if _USE_RAPIDFUZZ and _rapidfuzz_fuzz is not None:
+        # rapidfuzz.fuzz.ratio returns 0-100 directly
+        return int(_rapidfuzz_fuzz.ratio(query, value))
+
+    # Fallback to textdistance
     max_len = max(len(query), len(value))
     if max_len == 0:
         return 0
@@ -403,10 +421,18 @@ def calculate_ratio(query: str, value: str) -> int:
 
 
 def calculate_partial_ratio(query: str, value: str) -> int:
-    """Return the best similarity score for any substring match."""
+    """Return the best similarity score for any substring match.
+
+    Uses rapidfuzz if available (10-100x faster), falls back to textdistance.
+    """
     if not query or not value:
         return 0
 
+    if _USE_RAPIDFUZZ and _rapidfuzz_fuzz is not None:
+        # rapidfuzz.fuzz.partial_ratio returns 0-100 directly
+        return int(_rapidfuzz_fuzz.partial_ratio(query, value))
+
+    # Fallback to textdistance (slower sliding window implementation)
     shorter, longer = (query, value) if len(query) <= len(value) else (value, query)
     window = len(shorter)
     if window == 0:
@@ -423,7 +449,15 @@ def calculate_partial_ratio(query: str, value: str) -> int:
 
 
 def calculate_token_sort_ratio(query: str, value: str) -> int:
-    """Return similarity ratio after token sorting."""
+    """Return similarity ratio after token sorting.
+
+    Uses rapidfuzz if available (10-100x faster), falls back to textdistance.
+    """
+    if _USE_RAPIDFUZZ and _rapidfuzz_fuzz is not None:
+        # rapidfuzz.fuzz.token_sort_ratio returns 0-100 directly
+        return int(_rapidfuzz_fuzz.token_sort_ratio(query, value))
+
+    # Fallback to textdistance
     query_sorted = " ".join(sorted(query.split()))
     value_sorted = " ".join(sorted(value.split()))
     return calculate_ratio(query_sorted, value_sorted)

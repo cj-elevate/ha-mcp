@@ -1,16 +1,36 @@
 """
 Smart search tools for Home Assistant MCP server.
+
+Performance optimizations:
+1. Uses registry cache instead of get_states() (5x smaller payload)
+2. Offloads fuzzy search to thread pool (prevents event loop starvation)
+3. Adds timeout wrapper (prevents indefinite hangs)
+4. Fetches live state only for top N results (hybrid approach)
 """
 
 import asyncio
 import logging
+import os
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from typing import Any
 
 from ..client.rest_client import HomeAssistantClient
 from ..config import get_global_settings
 from ..utils.fuzzy_search import calculate_partial_ratio, create_fuzzy_searcher
+from ..utils.registry_cache import get_registry_cache
 
 logger = logging.getLogger(__name__)
+
+# Configurable search timeout (default 5s)
+SEARCH_TIMEOUT = float(os.environ.get("HA_SEARCH_TIMEOUT", "5.0"))
+
+# Thread pool for CPU-bound fuzzy search operations
+# Use Python's default sizing: min(32, cpu_count + 4) for I/O-bound mixed workloads
+_search_executor = ThreadPoolExecutor(
+    max_workers=min(32, (os.cpu_count() or 1) + 4),
+    thread_name_prefix="fuzzy_search"
+)
 
 # Default concurrency limit for parallel operations
 DEFAULT_CONCURRENCY_LIMIT = 5
@@ -35,11 +55,20 @@ class SmartSearchTools:
 
         self.fuzzy_searcher = create_fuzzy_searcher(threshold=fuzzy_threshold)
 
+        # Registry cache for fast entity lookups (5x smaller than get_states)
+        self.registry_cache = get_registry_cache(self.client)
+
     async def smart_entity_search(
         self, query: str, limit: int = 10, include_attributes: bool = False
     ) -> dict[str, Any]:
         """
         Advanced entity search with fuzzy matching and typo tolerance.
+
+        PERFORMANCE OPTIMIZED:
+        1. Uses registry cache (140KB) instead of get_states (700KB)
+        2. Offloads fuzzy search to thread pool (no event loop starvation)
+        3. 5s timeout prevents indefinite hangs
+        4. Fetches live state only for top N matches (hybrid approach)
 
         Args:
             query: Search query (can be partial, with typos)
@@ -50,29 +79,57 @@ class SmartSearchTools:
             Dictionary with search results and metadata
         """
         try:
-            # Get all entities
-            entities = await self.client.get_states()
+            # Get entities from registry cache (5x smaller, cached)
+            try:
+                entities = await asyncio.wait_for(
+                    self.registry_cache.get_search_entities(),
+                    timeout=SEARCH_TIMEOUT
+                )
+            except asyncio.TimeoutError:
+                logger.error(f"Registry cache fetch timed out after {SEARCH_TIMEOUT}s")
+                return {
+                    "success": False,
+                    "query": query,
+                    "error": f"Entity fetch timed out after {SEARCH_TIMEOUT}s. Home Assistant may be slow or unresponsive. Set HA_SEARCH_TIMEOUT env var to adjust.",
+                    "matches": [],
+                    "suggestions": ["Check Home Assistant status", "Try again in a moment", f"Current timeout: {SEARCH_TIMEOUT}s (set HA_SEARCH_TIMEOUT to adjust)"],
+                }
 
-            # Perform fuzzy search
-            matches = self.fuzzy_searcher.search_entities(entities, query, limit)
+            # Offload fuzzy search to thread pool (CPU-bound, blocks event loop)
+            loop = asyncio.get_running_loop()
+            search_fn = partial(
+                self.fuzzy_searcher.search_entities, entities, query, limit
+            )
+            matches = await loop.run_in_executor(_search_executor, search_fn)
 
-            # Format results
+            # Fetch live state for top matches only (hybrid approach)
+            entity_ids = [m["entity_id"] for m in matches]
+            live_states = await self.registry_cache.get_entity_states(entity_ids)
+
+            # Format results with live state
             results = []
             for match in matches:
+                entity_id = match["entity_id"]
+                live = live_states.get(entity_id, {})
+
                 result = {
-                    "entity_id": match["entity_id"],
+                    "entity_id": entity_id,
                     "friendly_name": match["friendly_name"],
                     "domain": match["domain"],
-                    "state": match["state"],
+                    "state": live.get("state", match.get("state", "unknown")),
                     "score": match["score"],
                     "match_type": match["match_type"],
                 }
 
                 if include_attributes:
-                    result["attributes"] = match["attributes"]
+                    # Merge cached attributes with live attributes
+                    result["attributes"] = {
+                        **match.get("attributes", {}),
+                        **live.get("attributes", {}),
+                    }
                 else:
-                    # Include only essential attributes
-                    attrs = match["attributes"]
+                    # Include only essential attributes from live state
+                    attrs = live.get("attributes", match.get("attributes", {}))
                     essential_attrs = {}
                     for key in [
                         "unit_of_measurement",
@@ -86,10 +143,13 @@ class SmartSearchTools:
 
                 results.append(result)
 
-            # Get suggestions if no good matches
+            # Get suggestions if no good matches (also offload to executor)
             suggestions = []
             if not matches or (matches and matches[0]["score"] < 80):
-                suggestions = self.fuzzy_searcher.get_smart_suggestions(entities, query)
+                suggest_fn = partial(
+                    self.fuzzy_searcher.get_smart_suggestions, entities, query
+                )
+                suggestions = await loop.run_in_executor(_search_executor, suggest_fn)
 
             return {
                 "success": True,
@@ -100,6 +160,7 @@ class SmartSearchTools:
                     "fuzzy_threshold": self.settings.fuzzy_threshold,
                     "best_match_score": matches[0]["score"] if matches else 0,
                     "search_suggestions": suggestions,
+                    "cache_stats": self.registry_cache.stats,
                 },
                 "usage_tips": [
                     "Try partial names: 'living' finds 'Living Room Light'",
