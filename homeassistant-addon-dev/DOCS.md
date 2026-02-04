@@ -1,3 +1,9 @@
+---
+type: note
+updated: 2026-01-03
+area: servers
+project: ha-mcp-extended
+---
 # Home Assistant MCP Server (Dev Channel) - Documentation
 
 **WARNING: This is the development channel. Expect bugs and breaking changes.**

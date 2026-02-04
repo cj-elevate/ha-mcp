@@ -1,3 +1,9 @@
+---
+type: note
+updated: 2026-01-03
+area: servers
+project: ha-mcp-extended
+---
 # Home Assistant MCP Server Add-on
 
 AI assistant integration for Home Assistant via Model Context Protocol (MCP).

@@ -1,3 +1,10 @@
+---
+type: doc
+doc: changelog
+updated: 2026-01-03
+project: ha-mcp-extended
+area: servers
+---
 # CHANGELOG
 
 <!-- version list -->
