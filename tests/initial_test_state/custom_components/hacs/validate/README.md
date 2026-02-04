@@ -1,3 +1,10 @@
+---
+type: doc
+doc: readme
+updated: 2026-01-03
+project: ha-mcp-extended
+area: servers
+---
 # Repository validation
 
 This is where the validation rules that run against the various repository categories live.

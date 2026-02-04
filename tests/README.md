@@ -1,3 +1,10 @@
+---
+type: doc
+doc: readme
+updated: 2026-01-03
+project: ha-mcp-extended
+area: servers
+---
 # 🧪 Home Assistant MCP Tests
 
 ## 🚀 Quick Start

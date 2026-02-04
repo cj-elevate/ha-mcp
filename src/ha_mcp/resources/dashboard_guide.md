@@ -1,3 +1,9 @@
+---
+type: note
+updated: 2026-01-03
+area: servers
+project: ha-mcp-extended
+---
 # Home Assistant Dashboard Guide
 
 Complete guide for designing Home Assistant dashboards: structure, built-in cards, custom cards, CSS styling, and HACS integration.
