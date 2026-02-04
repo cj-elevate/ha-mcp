@@ -1,3 +1,9 @@
+---
+type: note
+updated: 2026-01-03
+area: servers
+project: ha-mcp-extended
+---
 # Contributing to Home Assistant MCP Server
 
 Thank you for your interest in contributing!

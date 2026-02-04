@@ -1,3 +1,9 @@
+---
+type: note
+updated: 2026-01-03
+area: servers
+project: ha-mcp-extended
+---
 # Privacy Policy
 
 **Last updated:** November 2024

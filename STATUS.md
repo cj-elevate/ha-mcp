@@ -1,3 +1,10 @@
+---
+type: doc
+doc: status
+updated: 2026-01-03
+project: ha-mcp-extended
+area: servers
+---
 # STATUS: ha-mcp-extended
 
 ## Current Task: Search Performance Optimization (v2 Complete)

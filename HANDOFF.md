@@ -1,18 +1,21 @@
 ---
+type: doc
+doc: handoff
+updated: 2026-01-03
 project: ha-mcp-extended
+area: servers
 path: D:\servers\ha-mcp-extended
-phase: "COMPLETE: Search Performance Optimization"
-progress: "4/4"
+phase: COMPLETE: Search Performance Optimization
+progress: 4/4
 status_hash: a7f3c2d1
 temperature: warm
-git:
-  branch: master
-  head: f1d7a74
-  dirty: true
-  untracked: 0
+git: 
+branch: master
+head: f1d7a74
+dirty: true
+untracked: 0
 generated: 2026-01-02T04:00:00Z
 ---
-
 # HANDOFF: ha-mcp-extended
 
 ## Current Phase

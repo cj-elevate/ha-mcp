@@ -1,3 +1,11 @@
+---
+type: project
+updated: 2026-01-03
+project: ha-mcp-extended
+area: servers
+path: D:\servers\ha-mcp-extended
+status: active
+---
 # ha-mcp-extended
 
 ## Purpose
