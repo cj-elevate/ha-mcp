@@ -1,3 +1,10 @@
+---
+type: doc
+doc: task-plan
+updated: 2026-01-03
+project: ha-mcp-extended
+area: servers
+---
 # Task Plan: Search Performance Optimization
 
 **Created:** 2026-01-01

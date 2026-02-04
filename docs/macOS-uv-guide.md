@@ -1,3 +1,9 @@
+---
+type: note
+updated: 2026-01-03
+area: servers
+project: ha-mcp-extended
+---
 # macOS Setup Guide
 
 Control Home Assistant with Claude Desktop in about 10 minutes.

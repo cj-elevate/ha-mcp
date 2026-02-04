@@ -1,3 +1,9 @@
+---
+type: note
+updated: 2026-01-03
+area: servers
+project: ha-mcp-extended
+---
 # FAQ & Troubleshooting
 
 Common questions and solutions for ha-mcp setup.
