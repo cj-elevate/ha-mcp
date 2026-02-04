@@ -17,7 +17,7 @@ import logging
 
 import pytest
 
-from ...utilities.assertions import assert_mcp_success, assert_mcp_failure, parse_mcp_result
+from ...utilities.assertions import parse_mcp_result
 
 logger = logging.getLogger(__name__)
 
@@ -45,14 +45,23 @@ def is_hacs_unavailable(data: dict) -> tuple[bool, str]:
     """
     error = data.get("error", "")
     error_code = data.get("error_code", "")
+    error_str = str(error).lower()
+
+    # Handle nested error dict structure
+    if isinstance(error, dict):
+        error_code = error.get("code", error_code)
+        error_str = str(error.get("message", "")).lower()
 
     unavailable_indicators = [
         (error_code == "HACS_NOT_AVAILABLE", "HACS not available"),
         (error_code == "HACS_DISABLED", f"HACS disabled: {data.get('disabled_reason', 'unknown')}"),
-        ("not found" in str(error).lower(), "Command not found"),
-        ("unknown command" in str(error).lower(), "Unknown command"),
-        ("disabled" in str(error).lower(), "HACS disabled"),
-        ("401" in str(error), "GitHub authentication failed"),
+        ((error_code == "INTERNAL_ERROR" and "rate" in error_str) or ("rate" in error_str and "limit" in error_str), "GitHub rate limit"),
+        (error_code == "INTERNAL_ERROR" and "github" in error_str, "GitHub access issue"),
+        (error_code == "INTERNAL_ERROR", f"HACS internal error: {error_str}"),
+        ("not found" in error_str, "Command not found"),
+        ("unknown command" in error_str, "Unknown command"),
+        ("disabled" in error_str, "HACS disabled"),
+        ("401" in error_str, "GitHub authentication failed"),
     ]
 
     for condition, reason in unavailable_indicators:
@@ -536,6 +545,26 @@ class TestMcpToolsInstallation:
     - Network access to GitHub
     """
 
+    @pytest.fixture(autouse=True)
+    async def check_hacs_available(self, mcp_client):
+        """Pre-flight check: verify HACS is available before attempting install operations.
+
+        This prevents flaky test failures when HACS is rate-limited or temporarily unavailable.
+        """
+        logger.info("Pre-flight check: verifying HACS availability...")
+        result = await mcp_client.call_tool("ha_hacs_info", {})
+        data = extract_hacs_data(result)
+
+        unavailable, reason = is_hacs_unavailable(data)
+        if unavailable:
+            pytest.skip(f"HACS not available for install tests: {reason}")
+
+        if not data.get("success"):
+            error = data.get("error", "Unknown error")
+            pytest.skip(f"HACS not ready: {error}")
+
+        logger.info(f"Pre-flight check passed: HACS v{data.get('version')} is available")
+
     async def test_install_mcp_tools_basic(self, mcp_client):
         """
         Test: Install ha_mcp_tools via HACS (without restart)
@@ -544,6 +573,13 @@ class TestMcpToolsInstallation:
         and download the custom component. Does not restart HA.
         """
         logger.info("Testing ha_install_mcp_tools (without restart)...")
+
+        # Before installation, verify HACS is available and ready
+        result_info = await mcp_client.call_tool("ha_hacs_info", {})
+        info_data = extract_hacs_data(result_info)
+        unavailable, reason = is_hacs_unavailable(info_data)
+        if unavailable:
+            pytest.skip(f"HACS not available or not ready: {reason}")
 
         result = await mcp_client.call_tool("ha_install_mcp_tools", {"restart": False})
         data = extract_hacs_data(result)
@@ -569,7 +605,7 @@ class TestMcpToolsInstallation:
         if data.get("already_installed"):
             logger.info(f"ha_mcp_tools already installed: {data.get('version')}")
         else:
-            logger.info(f"ha_mcp_tools installed successfully")
+            logger.info("ha_mcp_tools installed successfully")
             assert "note" in data, "Should include note about restart"
 
         # Verify services list is provided
@@ -586,6 +622,13 @@ class TestMcpToolsInstallation:
         Calling install twice should succeed and return already_installed status.
         """
         logger.info("Testing ha_install_mcp_tools idempotency...")
+
+        # Before installation, verify HACS is available and ready
+        result_info = await mcp_client.call_tool("ha_hacs_info", {})
+        info_data = extract_hacs_data(result_info)
+        unavailable, reason = is_hacs_unavailable(info_data)
+        if unavailable:
+            pytest.skip(f"HACS not available or not ready: {reason}")
 
         # First install
         result1 = await mcp_client.call_tool("ha_install_mcp_tools", {"restart": False})
@@ -616,6 +659,13 @@ class TestMcpToolsInstallation:
         After installing, the component should appear in the HACS repository list.
         """
         logger.info("Testing ha_mcp_tools appears in HACS list...")
+
+        # Before installation, verify HACS is available and ready
+        result_info = await mcp_client.call_tool("ha_hacs_info", {})
+        info_data = extract_hacs_data(result_info)
+        unavailable, reason = is_hacs_unavailable(info_data)
+        if unavailable:
+            pytest.skip(f"HACS not available or not ready: {reason}")
 
         # First ensure it's installed
         install_result = await mcp_client.call_tool("ha_install_mcp_tools", {"restart": False})

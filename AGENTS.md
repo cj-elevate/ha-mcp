@@ -8,6 +8,82 @@ project: ha-mcp-extended
 
 Guidance for Claude Code when working with this repository.
 
+## Repository Structure
+
+This repository uses a worktree-based development workflow.
+
+**Documentation Setup:**
+- This file is `AGENTS.md` (the canonical source)
+- `CLAUDE.md` is a symlink pointing to `AGENTS.md`
+- Read either file - they're the same content
+- Commit changes to `AGENTS.md`, the symlink will automatically reflect them
+
+**Directory Structure:**
+```
+/home/julien/github/ha-mcp/           # Main repository (checkout master here)
+├── AGENTS.md                          # This file (canonical source)
+├── CLAUDE.md -> AGENTS.md             # Symlink for convenience
+├── worktree/                          # Git worktrees (gitignored)
+│   ├── issue-42/                      # Feature branch worktree
+│   └── fix-something/                 # Fix branch worktree
+├── local/                             # Scratch work (gitignored)
+└── .claude/agents/                    # Custom agent workflows
+```
+
+**Why use `worktree/` subdirectory:**
+- Keeps worktrees organized in one place
+- Gitignored (won't pollute `git status`)
+- All worktrees automatically inherit `.claude/agents/` workflows
+- Easy cleanup: `git worktree prune` removes stale references
+
+## Worktree Workflow
+
+### Creating Worktrees
+
+**ALWAYS create worktrees in the `worktree/` subdirectory**, not at the repository root.
+
+```bash
+# Correct - worktrees go in worktree/ subdirectory
+cd /home/julien/github/ha-mcp
+git worktree add worktree/issue-42 -b issue-42
+git worktree add worktree/feat-new-feature -b feat/new-feature
+
+# Wrong - don't create worktrees at repo root
+git worktree add issue-42 -b issue-42          # ❌ Creates orphaned worktree
+git worktree add ../issue-42 -b issue-42       # ❌ Outside repo, no .claude/agents/
+```
+
+**Working in a worktree:**
+```bash
+# Navigate to your worktree
+cd worktree/issue-42
+
+# Work normally - you have full access to .claude/agents/
+git status
+git commit -m "feat: implement feature"
+git push
+
+# When done, return to main repo and clean up
+cd /home/julien/github/ha-mcp
+git worktree remove worktree/issue-42
+```
+
+**Cleaning up stale worktrees:**
+```bash
+# If worktree directories were deleted but git still tracks them
+git worktree prune
+```
+
+### Agent Workflows
+
+Custom agent workflows are located in `.claude/agents/`:
+
+| Agent | File | Model | Purpose |
+|-------|------|-------|---------|
+| **issue-analysis** | `issue-analysis.md` | Opus | Deep issue analysis - comprehensive codebase exploration, implementation planning, architectural assessment, complexity evaluation. Complements automated Gemini triage with human-directed deep analysis. |
+| **issue-to-pr-resolver** | `issue-to-pr-resolver.md` | Sonnet | End-to-end issue implementation: pre-flight checks → worktree creation → implementation with tests → pre-PR checkpoint → PR creation → iterative CI/review resolution until merge-ready. |
+| **pr-checker** | `pr-checker.md` | Sonnet | Review and manage existing PRs - check comments, CI status, resolve review threads, monitor until all checks pass. |
+
 ## Project Overview
 
 **Home Assistant MCP Server** - A production MCP server enabling AI assistants to control Home Assistant smart homes. Provides 80+ tools for entity control, automations, device management, and more.
@@ -38,42 +114,87 @@ When implementing features or debugging, consult these resources:
 | `needs-choice` | Multiple approaches, needs stakeholder input |
 | `needs-info` | Awaiting clarification from reporter |
 | `priority: high/medium/low` | Relative priority |
-| `triaged` | Analysis complete |
+| `triaged` | Automated Gemini triage complete |
+| `issue-analyzed` | Deep Claude analysis complete |
 
-### Issue Triage Workflow
+### Issue Analysis Workflow
 
-When the user says "triage new issues" or similar:
+**Two-Tier System:**
 
-1. **List untriaged issues first**:
+- **Automated Triage (Gemini)**: Runs automatically on new issues via `.github/workflows/gemini-triage.yml`. Performs quick completeness check and adds initial guidance. Adds `triaged` label when complete.
+
+- **Deep Analysis (Human-Directed - Claude)**: Comprehensive codebase exploration, implementation planning, and architectural assessment. Use for issues requiring detailed planning or architectural decisions.
+
+**When the user says "analyze issues" or "deep analysis":**
+
+1. **List issues needing deep analysis**:
    ```bash
-   gh issue list --state open --json number,title,labels --jq '.[] | select(.labels | map(.name) | contains(["triaged"]) | not) | "#\(.number): \(.title)"'
+   gh issue list --state open --json number,title,labels --jq '.[] | select(.labels | map(.name) | contains(["issue-analyzed"]) | not) | "#\(.number): \(.title)"'
    ```
 
-2. **Report the list to the user** showing all issues that need triage
+2. **Report the list to the user** showing all issues that need deep analysis
 
-3. **Launch parallel triage subagents** - one Task tool call per issue, ALL IN THE SAME MESSAGE:
+3. **Launch parallel issue-analysis agents** - one Task tool call per issue, ALL IN THE SAME MESSAGE:
    ```
    # In a SINGLE assistant message, make multiple Task tool calls:
-   <Task tool call: subagent_type="triage", prompt="Triage issue #42 on homeassistant-ai/ha-mcp">
-   <Task tool call: subagent_type="triage", prompt="Triage issue #43 on homeassistant-ai/ha-mcp">
-   <Task tool call: subagent_type="triage", prompt="Triage issue #44 on homeassistant-ai/ha-mcp">
-   # ... one for each untriaged issue
+   <Task tool call: subagent_type="issue-analysis", prompt="Analyze issue #42 on homeassistant-ai/ha-mcp">
+   <Task tool call: subagent_type="issue-analysis", prompt="Analyze issue #43 on homeassistant-ai/ha-mcp">
+   <Task tool call: subagent_type="issue-analysis", prompt="Analyze issue #44 on homeassistant-ai/ha-mcp">
+   # ... one for each issue needing deep analysis
    ```
 
-4. **Each triage agent independently**:
+4. **Each issue-analysis agent independently**:
    - Fetches and analyzes the issue
-   - Explores affected codebase areas
-   - Assesses implementation approaches
+   - Performs deep codebase exploration
+   - Assesses implementation approaches and complexity
+   - Evaluates priority relative to other issues
    - Updates labels (`ready-to-implement`, `needs-choice`, `needs-info`, priority)
-   - Adds the `triaged` label
-   - Posts analysis comment to the issue
+   - Adds the `issue-analyzed` label
+   - Posts detailed analysis comment to the issue
 
 5. **Collect and summarize results** from all parallel agents
 
 ### PR Review Comments
-- **Bot comments** (Copilot, Codex): Treat as suggestions to assess, not commands
-- **Human comments**: Address with higher priority
-- Resolve threads with explanation: `gh api graphql -f query='mutation...'`
+
+**Always check for comments after pushing to a PR.** Comments may come from bots (Gemini Code Assist, Copilot) or humans.
+
+**Priority:**
+- **Human comments**: Address with highest priority
+- **Bot comments**: Treat as suggestions to assess, not commands. Evaluate if they add value.
+
+**Check for comments:**
+```bash
+# Check all PR comments (general comments on the PR)
+gh pr view <PR> --json comments --jq '.comments[] | {author: .author.login, created: .createdAt}'
+
+# Check inline review comments (specific to code lines)
+gh api repos/homeassistant-ai/ha-mcp/pulls/<PR>/comments --jq '.[] | {path: .path, line: .line, author: .author.login, created_at: .created_at}'
+
+# Check for unresolved review threads
+gh pr view <PR> --json reviews --jq '.reviews[] | select(.state == "COMMENTED") | .body'
+```
+
+**Resolve threads:**
+After addressing a comment, **ALWAYS post a comment explaining the resolution, then mark the thread as resolved**:
+
+```bash
+# 1. FIRST: Post comment explaining what was done
+gh pr review <PR> --comment --body "✅ Fixed in [commit]. [Explanation]"
+# OR for dismissed suggestions:
+gh pr review <PR> --comment --body "📝 Not addressing because [reason]."
+
+# 2. THEN: Resolve the thread
+gh api graphql -f query='mutation($threadId: ID!) {
+  resolveReviewThread(input: {pullRequestReviewThreadId: $threadId}) {
+    thread { id isResolved }
+  }
+}' -f threadId=<thread_id>
+```
+
+**Why comment first:**
+- Provides context for future reviewers
+- Documents decision-making process
+- Makes it clear what was done or why suggestion was dismissed
 
 ## Git & PR Policies
 
@@ -87,12 +208,142 @@ git add . && git commit -m "feat: description"
 **Never push or create PRs without user permission.**
 
 ### PR Workflow
-1. Update tests if needed
-2. Commit and push
-3. Wait ~3 min for CI: `sleep 180`
-4. Check status: `gh pr checks <PR>`
-5. Fix failures: `gh run view <run-id> --log-failed`
-6. Repeat until green
+
+**After creating or updating a PR, always follow this workflow:**
+
+1. **Update tests if needed**
+2. **Commit and push**
+3. **Wait for CI** (~3 min for tests to start and complete):
+   ```bash
+   sleep 180
+   ```
+4. **Check CI status**:
+   ```bash
+   gh pr checks <PR>
+   ```
+5. **Check for review comments** (see "PR Review Comments" section above)
+6. **Fix any failures**:
+   ```bash
+   # View failed run logs
+   gh run view <run-id> --log-failed
+
+   # Or find the run ID from PR
+   gh pr checks <PR> --json | jq '.[] | select(.conclusion == "failure") | .detailsUrl'
+   ```
+7. **Address review comments** if any (prioritize human comments)
+8. **Repeat steps 2-7 until:**
+   - ✅ All CI checks green
+   - ✅ All comments addressed
+   - ✅ PR ready for merge
+
+### PR Execution Philosophy
+
+**Work autonomously during PR implementation:**
+- Don't ask the user about every small choice or decision during implementation
+- Make reasonable technical decisions based on codebase patterns and best practices
+- Fix unrelated test failures encountered during CI (even if time-consuming)
+- Document choices for final summary
+
+**Making implementation choices:**
+- **DO NOT** choose based on what's faster to implement
+- **DO** consider long-term codebase health - refactoring that benefits maintainability is valid
+- **For non-obvious choices with consequences**: Create 2 mutually exclusive PRs (one for each approach) and let user choose
+- **For obvious choices**: Implement and document in final summary
+
+**Final reporting (only after ALL workflow steps complete):**
+
+Once the PR is ready (all checks green, comments addressed), provide:
+
+1. **Comment on the PR** with comprehensive details:
+   ```markdown
+   ## Implementation Summary
+
+   **Choices Made:**
+   - [List key technical decisions and rationale]
+
+   **Problems Encountered:**
+   - [Issues faced and how they were resolved]
+   - [Unrelated test failures fixed (if any)]
+
+   **Suggested Improvements:**
+   - [Optional follow-up work or technical debt noted]
+   ```
+
+2. **Short summary for user** when returning control:
+   - High-level overview of what was accomplished
+   - Any choices that may need user input
+   - Current PR status
+
+**Example PR comment:**
+```markdown
+## Implementation Summary
+
+**Choices Made:**
+- Used context-aware recursion to preserve `conditions` in choose blocks while normalizing at root level
+- Added both unit tests (fast feedback) and E2E tests (real API validation)
+- Fixed unrelated `test_script_traces` failure by adding polling logic
+
+**Problems Encountered:**
+- Initial implementation incorrectly passed `in_choose_or_if` flag recursively, causing conditions inside sequence blocks to not be normalized
+- Gemini suggested logbook verification in E2E test, but manual trigger bypasses conditions - simplified to structural validation instead
+
+**Suggested Improvements:**
+- Consider adding integration test with actual state changes to verify choose block execution (currently only validates structure)
+```
+
+### Implementing Improvements in Separate PRs
+
+**When you identify improvements with long-term benefit, implement them in separate PRs:**
+
+**Types of improvements to implement:**
+- Workflow improvements (updates to CLAUDE.md/AGENTS.md)
+- Code quality improvements (refactoring, better patterns)
+- Documentation improvements
+- Test infrastructure improvements
+- Build/CI improvements
+
+**Branching strategy:**
+```bash
+# Prefer branching from master when possible
+git checkout master
+git pull
+git checkout -b improve/description
+
+# Only branch from PR branch if improvement depends on PR changes
+git checkout feature/main-pr-branch
+git checkout -b improve/description-depends-on-main-pr
+```
+
+**Rules:**
+1. **Separate PR required** - never mix improvements with main feature PR
+2. **Branch from master** when possible (most improvements are independent)
+3. **Branch from PR branch** only if improvement depends on PR changes
+4. **Avoid merge conflicts** - keep improvements focused and minimal
+5. **Only implement long-term benefits** - skip "nice to have" without clear value
+6. **For `.claude/agents/` changes**: Always branch from and PR to master
+
+**Workflow:**
+1. Complete main PR (all checks green, comments addressed)
+2. Identify improvements during work
+3. Create separate PR(s) for improvements
+4. Mention improvement PRs in main PR final comment
+5. Return control to user with status of all PRs
+
+**Example final comment mentioning improvements:**
+```markdown
+## Implementation Summary
+
+**Main PR (#123):**
+- ✅ All checks passing, ready for merge
+- Feature X implemented with tests
+
+**Improvement PRs created:**
+- PR #124: Update CLAUDE.md with better CI failure debugging commands
+- PR #125: Refactor common validation logic into shared utility
+
+**Choices Made:** [...]
+**Problems Encountered:** [...]
+```
 
 ### Hotfix Process (Critical Bugs Only)
 
@@ -138,6 +389,71 @@ When hotfix PR merges, `hotfix-release.yml` runs:
 
 The `stable` tag is updated AFTER the changelog sync, ensuring it points to the exact release commit, not subsequent maintenance commits.
 
+### Boy Scout Rule
+
+**Principle**: "Always leave the code cleaner than you found it." — Robert C. Martin, *Clean Code*
+
+This principle guides incremental quality improvements during implementation work. The goal is continuous, low-risk enhancement without introducing regressions.
+
+**Where this principle applies most strongly:**
+
+1. **Tool descriptions** - Always improve clarity, accuracy, and usefulness when touching tool docstrings
+2. **Tests** - See testing guidelines below
+
+**For production code (non-test, non-docs):**
+
+Balance improvement against regression risk. Consider:
+- Code complexity and brittleness
+- Test coverage for the affected area
+- Scope of your current work
+- Impact of potential bugs
+
+**Testing guidelines:**
+
+| Scenario | Action |
+|----------|--------|
+| **No tests exist for code you're touching** | Add tests for the specific behavior you're implementing/fixing, without refactoring existing code |
+| **Tests exist but coverage is low** | Add tests for gaps if you're already working in that area |
+| **Tests exist, quality is low** | Improve test quality if it's straightforward (better assertions, clearer names, remove duplication) |
+| **Code quality is really low** | Open an issue describing the technical debt instead of fixing it inline |
+
+**Examples:**
+
+```python
+# GOOD: Adding test for new behavior without refactoring
+def test_new_automation_trigger():
+    # Test the specific feature you added
+    pass
+
+# GOOD: Improving tool description clarity
+"""
+Create a helper entity in Home Assistant.
+
+OLD: "Make helper with config"
+NEW: "Create a helper entity (input_boolean, counter, etc.) with the specified configuration.
+     Use ha_get_domain_docs('input_boolean') for schema details."
+"""
+
+# BAD: Large refactor while implementing a feature
+# Instead: Open issue #XYZ "Refactor helper creation logic" and stay focused on your feature
+
+# GOOD: Low-risk quality improvement
+# Renaming a confusing variable while fixing a bug in that function
+
+# BAD: High-risk refactor
+# Extracting shared logic into new abstractions while fixing a bug
+# Instead: Fix the bug, then open an issue to track the refactor opportunity
+```
+
+**When to open an issue instead:**
+
+- Refactoring would touch many files
+- Unclear how to improve without breaking changes
+- Improvement requires design decisions
+- Would significantly expand PR scope
+
+**Remember**: Small, continuous improvements beat large, risky refactors. Better tests, clearer docs, and obvious code wins compound over time.
+
 ## CI/CD Workflows
 
 | Workflow | Trigger | Purpose |
@@ -145,6 +461,7 @@ The `stable` tag is updated AFTER the changelog sync, ensuring it points to the 
 | `pr.yml` | PR opened | Lint, type check |
 | `e2e-tests.yml` | PR to master | Full E2E tests (~3 min) |
 | `publish-dev.yml` | Push to master | Dev release `.devN` |
+| `notify-dev-channel.yml` | Push to master (src/) | Comment on PRs/issues with dev testing instructions |
 | `semver-release.yml` | Weekly Tue 10:00 UTC | Stable release |
 | `hotfix-release.yml` | Hotfix PR merged | Immediate patch release |
 | `build-binary.yml` | Release | Linux/macOS/Windows binaries |
@@ -227,6 +544,82 @@ src/ha_mcp/
 **Service Layer**: Business logic in `smart_search.py`, `device_control.py` separate from tool modules.
 
 **WebSocket Verification**: Device operations verified via real-time state changes.
+
+**Tool Completion Semantics**: Tools should wait for operations to complete before returning, with optional `wait` parameter for control.
+
+## Writing MCP Tools
+
+### Naming Convention
+`ha_<verb>_<noun>`:
+- `get` — single item (`ha_get_state`)
+- `list` — collections (`ha_list_areas`)
+- `search` — filtered queries (`ha_search_entities`)
+- `set` — create/update (`ha_config_set_helper`)
+- `delete` — remove (`ha_config_delete_automation`)
+- `call` — execute (`ha_call_service`)
+
+### Tool Structure
+Create `tools_<domain>.py` in `src/ha_mcp/tools/`. Registry auto-discovers it.
+
+```python
+def register_<domain>_tools(mcp, client, **kwargs):
+    @mcp.tool(annotations={"readOnlyHint": True, "idempotentHint": True})
+    @log_tool_usage
+    async def ha_<verb>_<noun>(param: str) -> dict[str, Any]:
+        """One-line summary starting with action verb."""
+        # For complex schemas, add: "Use ha_get_domain_docs('<domain>') for details."
+```
+
+### Safety Annotations
+| Annotation | Use For |
+|------------|---------|
+| `readOnlyHint: True` | No side effects |
+| `idempotentHint: True` | Safe to retry |
+| `destructiveHint: True` | Deletes data |
+
+### Error Handling
+Use structured errors from `errors.py`:
+```python
+from ..errors import create_error_response, ErrorCode
+return create_error_response(
+    code=ErrorCode.ENTITY_NOT_FOUND,
+    message="Entity not found",
+    suggestions=["Use ha_search_entities() to find valid IDs"]
+)
+```
+
+### Return Values
+```python
+{"success": True, "data": result}                    # Success
+{"success": True, "partial": True, "warning": "..."}  # Degraded
+{"success": False, "error": {...}}                    # Failure
+```
+
+## Tool Waiting Behavior
+
+**Principle**: MCP tools should wait for operations to complete before returning, not just acknowledge API success.
+
+**Current State (#365)**: Tests use polling helpers to wait for completion after tool calls.
+
+**Future State (#381)**: Tools will have optional `wait` parameter (default `True`) to handle waiting internally:
+
+```python
+# Config operations wait by default
+await ha_config_set_helper(...)  # Polls until entity registered
+
+# Opt-out for bulk operations
+for config in configs:
+    await ha_config_set_automation(config, wait=False)
+await _verify_all_created(entity_ids)  # Batch verification
+```
+
+**Tool Categories**:
+- **Config ops** (automations, helpers, scripts): MUST wait by default
+- **Service calls** (lights, switches): SHOULD wait for state change
+- **Async ops** (automation triggers, external integrations): Return immediately, users poll
+- **Query ops** (get_state, search): Return immediately
+
+See issue #381 for implementation plan.
 
 ## Context Engineering & Progressive Disclosure
 
@@ -354,12 +747,20 @@ await mcp.call_tool("ha_config_get_script", {"script_id": "nonexistent"})
 
 Uses [semantic-release](https://python-semantic-release.readthedocs.io/) with conventional commits.
 
-| Prefix | Bump |
-|--------|------|
-| `fix:`, `perf:`, `refactor:` | Patch |
-| `feat:` | Minor |
-| `feat!:` or `BREAKING CHANGE:` | Major |
-| `chore:`, `docs:`, `test:` | No release |
+| Prefix | Bump | Changelog |
+|--------|------|-----------|
+| `fix:`, `perf:`, `refactor:` | Patch | User-facing |
+| `feat:` | Minor | User-facing |
+| `feat!:` or `BREAKING CHANGE:` | Major | User-facing |
+| `chore:`, `ci:`, `test:` | No release | Internal |
+| `docs:` | No release | User-facing |
+| `*:(internal)` | Same as type | Internal |
+
+**Use `(internal)` scope** for changes that aren't user-facing:
+```bash
+feat(internal): Log package version on startup  # Internal, not in user changelog
+feat: Add dark mode                             # User-facing
+```
 
 | Channel | When Updated |
 |---------|--------------|
@@ -374,7 +775,7 @@ Located in `.claude/agents/`:
 
 | Agent | Purpose |
 |-------|---------|
-| `triage` | Triage issues, assess complexity, update labels |
+| `issue-analysis` | Deep issue analysis: codebase exploration, implementation planning, complexity assessment |
 | `issue-to-pr-resolver` | End-to-end: issue → branch → implement → PR → CI green |
 | `pr-checker` | Review PR comments, resolve threads, monitor CI |
 

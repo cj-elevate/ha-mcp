@@ -16,6 +16,7 @@ import httpx
 from pydantic import Field
 
 from ..config import get_global_settings
+from ..utils.python_sandbox import PythonSandboxError, get_security_documentation, safe_execute
 from .helpers import log_tool_usage
 from .util_helpers import parse_json_param
 
@@ -23,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 # Try to import jq - it's not available on Windows ARM64
 try:
-    import jq
+    import jq  # noqa: F401 - Used to check availability, re-imported in function
     JQ_AVAILABLE = True
 except ImportError:
     JQ_AVAILABLE = False
@@ -271,50 +272,7 @@ def register_config_dashboard_tools(mcp: Any, client: Any, **kwargs: Any) -> Non
             "idempotentHint": True,
             "readOnlyHint": True,
             "tags": ["dashboard"],
-            "title": "List Dashboards",
-        }
-    )
-    @log_tool_usage
-    async def ha_config_list_dashboards() -> dict[str, Any]:
-        """
-        List all Home Assistant storage-mode dashboards.
-
-        Returns metadata for all custom dashboards including url_path, title,
-        icon, admin requirements, and sidebar visibility.
-
-        Note: Only shows storage-mode dashboards. YAML-mode dashboards
-        (defined in configuration.yaml) are not included.
-
-        EXAMPLES:
-        - List dashboards: ha_config_list_dashboards()
-        """
-        try:
-            result = await client.send_websocket_message(
-                {"type": "lovelace/dashboards/list"}
-            )
-            if isinstance(result, dict) and "result" in result:
-                dashboards = result["result"]
-            elif isinstance(result, list):
-                dashboards = result
-            else:
-                dashboards = []
-
-            return {
-                "success": True,
-                "action": "list",
-                "dashboards": dashboards,
-                "count": len(dashboards),
-            }
-        except Exception as e:
-            logger.error(f"Error listing dashboards: {e}")
-            return {"success": False, "action": "list", "error": str(e)}
-
-    @mcp.tool(
-        annotations={
-            "idempotentHint": True,
-            "readOnlyHint": True,
-            "tags": ["dashboard"],
-            "title": "Get Dashboard Config",
+            "title": "Get Dashboard",
         }
     )
     @log_tool_usage
@@ -323,29 +281,62 @@ def register_config_dashboard_tools(mcp: Any, client: Any, **kwargs: Any) -> Non
             str | None,
             Field(
                 description="Dashboard URL path (e.g., 'lovelace-home'). "
-                "Use None or empty string for default dashboard."
+                "Use 'default' for default dashboard. "
+                "If omitted with list_only=True, lists all dashboards."
             ),
         ] = None,
+        list_only: Annotated[
+            bool,
+            Field(
+                description="If True, list all dashboards instead of getting config. "
+                "When True, url_path is ignored.",
+            ),
+        ] = False,
         force_reload: Annotated[
             bool, Field(description="Force reload from storage (bypass cache)")
         ] = False,
     ) -> dict[str, Any]:
         """
-        Get complete dashboard configuration including all views and cards.
+        Get dashboard info - list all dashboards or get config for a specific one.
 
-        Returns the full Lovelace dashboard configuration.
+        Without url_path (or with list_only=True): Lists all storage-mode dashboards
+        with metadata including url_path, title, icon, admin requirements.
+
+        With url_path: Returns the full Lovelace dashboard configuration
+        including all views and cards.
 
         EXAMPLES:
-        - Get default dashboard: ha_config_get_dashboard()
-        - Get custom dashboard: ha_config_get_dashboard("lovelace-mobile")
-        - Force reload: ha_config_get_dashboard("lovelace-home", force_reload=True)
+        - List all dashboards: ha_config_get_dashboard(list_only=True)
+        - Get default dashboard: ha_config_get_dashboard(url_path="default")
+        - Get custom dashboard: ha_config_get_dashboard(url_path="lovelace-mobile")
+        - Force reload: ha_config_get_dashboard(url_path="lovelace-home", force_reload=True)
 
-        Note: url_path=None retrieves the default dashboard configuration.
+        Note: YAML-mode dashboards (defined in configuration.yaml) are not included in list.
         """
         try:
-            # Build WebSocket message
+            # List mode
+            if list_only:
+                result = await client.send_websocket_message(
+                    {"type": "lovelace/dashboards/list"}
+                )
+                if isinstance(result, dict) and "result" in result:
+                    dashboards = result["result"]
+                elif isinstance(result, list):
+                    dashboards = result
+                else:
+                    dashboards = []
+
+                return {
+                    "success": True,
+                    "action": "list",
+                    "dashboards": dashboards,
+                    "count": len(dashboards),
+                }
+
+            # Get mode - build WebSocket message
             data: dict[str, Any] = {"type": "lovelace/config", "force": force_reload}
-            if url_path:
+            # Handle "default" as special value for default dashboard
+            if url_path and url_path != "default":
                 data["url_path"] = url_path
 
             response = await client.send_websocket_message(data)
@@ -361,9 +352,9 @@ def register_config_dashboard_tools(mcp: Any, client: Any, **kwargs: Any) -> Non
                     "url_path": url_path,
                     "error": str(error_msg),
                     "suggestions": [
-                        "Verify dashboard exists using ha_config_list_dashboards()",
+                        "Use ha_config_get_dashboard(list_only=True) to see available dashboards",
                         "Check if you have permission to access this dashboard",
-                        "Use None for default dashboard",
+                        "Use url_path='default' for default dashboard",
                     ],
                 }
 
@@ -395,16 +386,16 @@ def register_config_dashboard_tools(mcp: Any, client: Any, **kwargs: Any) -> Non
 
             return result
         except Exception as e:
-            logger.error(f"Error getting dashboard config: {e}")
+            logger.error(f"Error getting dashboard: {e}")
             return {
                 "success": False,
-                "action": "get",
+                "action": "get" if not list_only else "list",
                 "url_path": url_path,
                 "error": str(e),
                 "suggestions": [
-                    "Verify dashboard exists using ha_config_list_dashboards()",
+                    "Use ha_config_get_dashboard(list_only=True) to see available dashboards",
                     "Check if you have permission to access this dashboard",
-                    "Use None for default dashboard",
+                    "Use url_path='default' for default dashboard",
                 ],
             }
 
@@ -437,12 +428,27 @@ def register_config_dashboard_tools(mcp: Any, client: Any, **kwargs: Any) -> Non
             str | None,
             Field(
                 description="jq expression to transform existing dashboard config. "
-                "Mutually exclusive with config. Requires config_hash for validation. "
+                "Mutually exclusive with config and python_transform. Requires config_hash for validation. "
                 "Examples: '.views[0].sections[1].cards[0].icon = \"mdi:thermometer\"', "
                 "'.views[0].cards += [{\"type\": \"button\", \"entity\": \"light.bedroom\"}]', "
                 "'del(.views[0].sections[0].cards[2])'. "
                 "MULTI-OP: Chain with '|': 'del(.views[0].cards[2]) | .views[0].cards[0].icon = \"mdi:new\"'. "
                 "Use ha_dashboard_find_card() to get jq_path for targeted edits."
+            ),
+        ] = None,
+        python_transform: Annotated[
+            str | None,
+            Field(
+                description="Python expression to transform existing dashboard config. "
+                "Mutually exclusive with config and jq_transform. "
+                "Requires config_hash for validation. "
+                "See PYTHON TRANSFORM SECURITY below for allowed operations. "
+                "Examples: "
+                "Simple: python_transform=\"config['views'][0]['cards'][0]['icon'] = 'mdi:lamp'\" "
+                "Pattern: python_transform=\"for card in config['views'][0]['cards']: if 'light' in card.get('entity', ''): card['icon'] = 'mdi:lightbulb'\" "
+                "Multi-op: python_transform=\"config['views'][0]['cards'][0]['icon'] = 'mdi:lamp'; del config['views'][0]['cards'][2]\" "
+                "\n\n"
+                + get_security_documentation(),
             ),
         ] = None,
         config_hash: Annotated[
@@ -475,12 +481,13 @@ def register_config_dashboard_tools(mcp: Any, client: Any, **kwargs: Any) -> Non
         Create or update a Home Assistant dashboard.
 
         Creates a new dashboard or updates an existing one with the provided configuration.
-        Supports two modes: full config replacement OR jq-based transformation.
+        Supports three modes: full config replacement, Python transformation, OR jq-based transformation.
 
         IMPORTANT: url_path must contain a hyphen (-) to be valid.
 
         WHEN TO USE WHICH MODE:
-        - jq_transform: Preferred for edits. Surgical changes, fewer tokens.
+        - python_transform: RECOMMENDED for edits. Surgical/pattern-based updates, works on all platforms.
+        - jq_transform: Legacy mode. Requires jq binary (not available on Windows ARM64).
         - config: New dashboards only, or full restructure. Replaces everything.
 
         JQ TRANSFORM EXAMPLES:
@@ -498,6 +505,13 @@ def register_config_dashboard_tools(mcp: Any, client: Any, **kwargs: Any) -> Non
         to get updated structure. Chain multiple ops in ONE expression when possible.
 
         TIP: Use ha_dashboard_find_card() to get the jq_path for any card.
+
+        PYTHON TRANSFORM EXAMPLES (RECOMMENDED):
+        - Update card icon: 'config["views"][0]["cards"][0]["icon"] = "mdi:thermometer"'
+        - Add card: 'config["views"][0]["cards"].append({"type": "button", "entity": "light.bedroom"})'
+        - Delete card: 'del config["views"][0]["cards"][2]'
+        - Pattern-based update: 'for card in config["views"][0]["cards"]: if "light" in card.get("entity", ""): card["icon"] = "mdi:lightbulb"'
+        - Multi-operation: 'config["views"][0]["cards"][0]["icon"] = "mdi:a"; config["views"][0]["cards"][1]["icon"] = "mdi:b"'
 
         MODERN DASHBOARD BEST PRACTICES (2024+):
         - Use "sections" view type (default) with grid-based layouts
@@ -599,16 +613,146 @@ def register_config_dashboard_tools(mcp: Any, client: Any, **kwargs: Any) -> Non
                     ],
                 }
 
-            # Validate mutual exclusivity of config and jq_transform
-            if config is not None and jq_transform is not None:
+            # Validate mutual exclusivity of config, jq_transform, and python_transform
+            transforms_provided = sum(
+                [
+                    config is not None,
+                    jq_transform is not None,
+                    python_transform is not None,
+                ]
+            )
+
+            if transforms_provided > 1:
                 return {
                     "success": False,
                     "action": "set",
-                    "error": "Cannot use both 'config' and 'jq_transform' parameters",
+                    "error": "Cannot use multiple transform methods simultaneously",
                     "suggestions": [
-                        "Use 'config' for full replacement",
-                        "Use 'jq_transform' for targeted changes to existing dashboard",
+                        "Use only ONE of: config, jq_transform, or python_transform",
+                        "config: Full replacement",
+                        "jq_transform: jq-based edits (requires jq installation)",
+                        "python_transform: Python-based edits (recommended, works everywhere)",
                     ],
+                }
+
+            # Handle python_transform mode
+            if python_transform is not None:
+                # config_hash is REQUIRED
+                if config_hash is None:
+                    return {
+                        "success": False,
+                        "action": "python_transform",
+                        "url_path": url_path,
+                        "error": "config_hash is required for python_transform",
+                        "suggestions": [
+                            "Call ha_config_get_dashboard() first",
+                            "Use the config_hash from that response",
+                        ],
+                    }
+
+                # Fetch current dashboard config
+                get_data: dict[str, Any] = {"type": "lovelace/config", "force": True}
+                if url_path:
+                    get_data["url_path"] = url_path
+
+                response = await client.send_websocket_message(get_data)
+
+                if isinstance(response, dict) and not response.get("success", True):
+                    error_msg = response.get("error", {})
+                    if isinstance(error_msg, dict):
+                        error_msg = error_msg.get("message", str(error_msg))
+                    return {
+                        "success": False,
+                        "action": "python_transform",
+                        "url_path": url_path,
+                        "error": f"Dashboard not found or inaccessible: {error_msg}",
+                        "suggestions": [
+                            "python_transform requires an existing dashboard",
+                            "Use 'config' parameter to create a new dashboard",
+                            "Verify dashboard exists with ha_config_get_dashboard(list_only=True)",
+                        ],
+                    }
+
+                current_config = (
+                    response.get("result") if isinstance(response, dict) else response
+                )
+                if not isinstance(current_config, dict):
+                    return {
+                        "success": False,
+                        "action": "python_transform",
+                        "url_path": url_path,
+                        "error": "Current dashboard config is invalid",
+                        "suggestions": [
+                            "Initialize dashboard with 'config' parameter first"
+                        ],
+                    }
+
+                # Validate config_hash for optimistic locking
+                current_hash = _compute_config_hash(current_config)
+                if current_hash != config_hash:
+                    return {
+                        "success": False,
+                        "action": "python_transform",
+                        "url_path": url_path,
+                        "error": "Dashboard modified since last read (conflict)",
+                        "suggestions": [
+                            "Call ha_config_get_dashboard() again",
+                            "Use the fresh config_hash from that response",
+                        ],
+                    }
+
+                # Apply Python transformation with validation
+                try:
+                    transformed_config = safe_execute(python_transform, current_config)
+                except PythonSandboxError as e:
+                    return {
+                        "success": False,
+                        "action": "python_transform",
+                        "url_path": url_path,
+                        "error": str(e),
+                        "suggestions": [
+                            "Check expression syntax",
+                            "Ensure only allowed operations are used",
+                            "See tool description for allowed operations",
+                            f"Expression: {python_transform[:100]}...",
+                        ],
+                    }
+
+                # Save transformed config
+                save_data: dict[str, Any] = {
+                    "type": "lovelace/config/save",
+                    "config": transformed_config,
+                }
+                if url_path:
+                    save_data["url_path"] = url_path
+
+                save_result = await client.send_websocket_message(save_data)
+
+                if isinstance(save_result, dict) and not save_result.get("success", True):
+                    error_msg = save_result.get("error", {})
+                    if isinstance(error_msg, dict):
+                        error_msg = error_msg.get("message", str(error_msg))
+                    return {
+                        "success": False,
+                        "action": "python_transform",
+                        "url_path": url_path,
+                        "error": f"Failed to save transformed config: {error_msg}",
+                        "suggestions": [
+                            "Expression may have produced invalid dashboard structure",
+                            "Verify config format is valid Lovelace JSON",
+                        ],
+                    }
+
+                # Compute new hash for potential chaining
+                new_config_hash = _compute_config_hash(transformed_config)
+
+                return {
+                    "success": True,
+                    "action": "python_transform",
+                    "url_path": url_path,
+                    "config_hash": new_config_hash,
+                    "python_expression": python_transform,
+                    "message": f"Dashboard {url_path} updated via Python transform",
                 }
 
             # Handle jq_transform mode
@@ -645,7 +789,7 @@ def register_config_dashboard_tools(mcp: Any, client: Any, **kwargs: Any) -> Non
                         "suggestions": [
                             "jq_transform requires an existing dashboard",
                             "Use 'config' parameter to create a new dashboard",
-                            "Verify dashboard exists with ha_config_list_dashboards()",
+                            "Verify dashboard exists with ha_config_get_dashboard(list_only=True)",
                         ],
                     }
 
@@ -985,7 +1129,7 @@ def register_config_dashboard_tools(mcp: Any, client: Any, **kwargs: Any) -> Non
                     "dashboard_id": dashboard_id,
                     "error": str(error_msg),
                     "suggestions": [
-                        "Verify dashboard ID exists using ha_config_list_dashboards()",
+                        "Verify dashboard ID exists using ha_config_get_dashboard(list_only=True)",
                         "Check that you have admin permissions",
                     ],
                 }
@@ -1014,7 +1158,7 @@ def register_config_dashboard_tools(mcp: Any, client: Any, **kwargs: Any) -> Non
                 "dashboard_id": dashboard_id,
                 "error": str(e),
                 "suggestions": [
-                    "Verify dashboard ID exists using ha_config_list_dashboards()",
+                    "Verify dashboard ID exists using ha_config_get_dashboard(list_only=True)",
                     "Check that you have admin permissions",
                 ],
             }
@@ -1081,7 +1225,7 @@ def register_config_dashboard_tools(mcp: Any, client: Any, **kwargs: Any) -> Non
                     "suggestions": [
                         "Verify dashboard exists and is storage-mode",
                         "Check that you have admin permissions",
-                        "Use ha_config_list_dashboards() to see available dashboards",
+                        "Use ha_config_get_dashboard(list_only=True) to see available dashboards",
                         "Cannot delete YAML-mode or default dashboard",
                     ],
                 }
@@ -1118,7 +1262,7 @@ def register_config_dashboard_tools(mcp: Any, client: Any, **kwargs: Any) -> Non
                 "suggestions": [
                     "Verify dashboard exists and is storage-mode",
                     "Check that you have admin permissions",
-                    "Use ha_config_list_dashboards() to see available dashboards",
+                    "Use ha_config_get_dashboard(list_only=True) to see available dashboards",
                     "Cannot delete YAML-mode or default dashboard",
                 ],
             }
@@ -1434,7 +1578,7 @@ def register_config_dashboard_tools(mcp: Any, client: Any, **kwargs: Any) -> Non
                     "url_path": url_path,
                     "error": f"Failed to get dashboard: {error_msg}",
                     "suggestions": [
-                        "Verify dashboard exists with ha_config_list_dashboards()",
+                        "Verify dashboard exists with ha_config_get_dashboard(list_only=True)",
                         "Check HA connection",
                     ],
                 }
@@ -1506,7 +1650,7 @@ def register_config_dashboard_tools(mcp: Any, client: Any, **kwargs: Any) -> Non
                 "error_type": type(e).__name__,
                 "suggestions": [
                     "Check HA connection",
-                    "Verify dashboard with ha_config_list_dashboards()",
+                    "Verify dashboard with ha_config_get_dashboard(list_only=True)",
                 ],
             }
 

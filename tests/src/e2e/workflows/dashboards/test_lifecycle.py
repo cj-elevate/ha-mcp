@@ -15,11 +15,13 @@ Each test uses real Home Assistant API calls via the MCP server to ensure
 production-level functionality and compatibility.
 """
 
-import asyncio
 import ast
 import json
 import logging
+import sys
 from typing import Any
+
+import pytest
 
 # Import test utilities
 from tests.src.e2e.utilities.assertions import MCPAssertions
@@ -88,11 +90,10 @@ class TestDashboardLifecycle:
         assert dashboard_id is not None, "Dashboard creation should return dashboard_id"
 
         # Small delay for HA to process
-        await asyncio.sleep(1)
 
         # 2. List dashboards - verify exists
         logger.info("Listing dashboards...")
-        list_data = await mcp.call_tool_success("ha_config_list_dashboards", {})
+        list_data = await mcp.call_tool_success("ha_config_get_dashboard", {"list_only": True})
         assert list_data["success"] is True
         assert any(
             d.get("url_path") == "test-e2e-dashboard" for d in list_data.get("dashboards", [])
@@ -144,8 +145,7 @@ class TestDashboardLifecycle:
         assert delete_data["success"] is True
 
         # 7. Verify deletion
-        await asyncio.sleep(1)
-        list_after_data = await mcp.call_tool_success("ha_config_list_dashboards", {})
+        list_after_data = await mcp.call_tool_success("ha_config_get_dashboard", {"list_only": True})
         assert not any(
             d.get("url_path") == "test-e2e-dashboard"
             for d in list_after_data.get("dashboards", [])
@@ -171,10 +171,9 @@ class TestDashboardLifecycle:
         dashboard_id = create_data.get("dashboard_id")
         assert dashboard_id is not None
 
-        await asyncio.sleep(1)
 
         # Verify it exists
-        list_data = await mcp.call_tool_success("ha_config_list_dashboards", {})
+        list_data = await mcp.call_tool_success("ha_config_get_dashboard", {"list_only": True})
         assert any(
             d.get("url_path") == "test-strategy-dashboard"
             for d in list_data.get("dashboards", [])
@@ -215,7 +214,6 @@ class TestDashboardLifecycle:
         dashboard_id = create_data.get("dashboard_id")
         assert dashboard_id is not None
 
-        await asyncio.sleep(1)
 
         # Update only title
         meta_data = await mcp.call_tool_success(
@@ -246,10 +244,9 @@ class TestDashboardLifecycle:
         dashboard_id = create_data.get("dashboard_id")
         assert dashboard_id is not None
 
-        await asyncio.sleep(1)
 
         # Verify it exists
-        list_data = await mcp.call_tool_success("ha_config_list_dashboards", {})
+        list_data = await mcp.call_tool_success("ha_config_get_dashboard", {"list_only": True})
         assert any(d.get("url_path") == "test-no-config" for d in list_data.get("dashboards", []))
 
         # Cleanup
@@ -365,6 +362,7 @@ class TestDashboardDocumentationTools:
         logger.info("ha_get_card_documentation (invalid) test passed")
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="jq library not available on Windows")
 class TestJqTransformAndFindCard:
     """E2E tests for jq_transform and ha_dashboard_find_card."""
 
@@ -391,7 +389,6 @@ class TestJqTransformAndFindCard:
                 },
             },
         )
-        await asyncio.sleep(1)
 
         try:
             # Get dashboard and config_hash
@@ -452,7 +449,6 @@ class TestJqTransformAndFindCard:
                 },
             },
         )
-        await asyncio.sleep(1)
 
         try:
             # Add a card
@@ -528,7 +524,6 @@ class TestJqTransformAndFindCard:
                 },
             },
         )
-        await asyncio.sleep(1)
 
         try:
             # Get config_hash
@@ -589,7 +584,6 @@ class TestJqTransformAndFindCard:
                 "config": {"views": [{"cards": []}]},
             },
         )
-        await asyncio.sleep(1)
 
         try:
             # Try jq_transform without config_hash - should fail
@@ -642,7 +636,6 @@ class TestJqTransformAndFindCard:
                 },
             },
         )
-        await asyncio.sleep(1)
 
         try:
             # Find card by entity
@@ -696,7 +689,6 @@ class TestJqTransformAndFindCard:
                 },
             },
         )
-        await asyncio.sleep(1)
 
         try:
             # Find all tile cards
@@ -743,7 +735,6 @@ class TestJqTransformAndFindCard:
                 },
             },
         )
-        await asyncio.sleep(1)
 
         try:
             # Find card

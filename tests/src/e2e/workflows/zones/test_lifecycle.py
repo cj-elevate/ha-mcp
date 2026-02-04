@@ -12,7 +12,6 @@ Each test uses real Home Assistant API calls via the MCP server to ensure
 production-level functionality and compatibility.
 """
 
-import asyncio
 import logging
 
 import pytest
@@ -37,7 +36,7 @@ class TestZoneLifecycle:
         logger.info("Listing all zones...")
 
         async with MCPAssertions(mcp_client) as mcp:
-            list_data = await mcp.call_tool_success("ha_list_zones", {})
+            list_data = await mcp.call_tool_success("ha_get_zone", {})
 
             assert "count" in list_data, f"Missing 'count' in response: {list_data}"
             assert "zones" in list_data, f"Missing 'zones' in response: {list_data}"
@@ -77,8 +76,7 @@ class TestZoneLifecycle:
             logger.info(f"Created zone: {zone_name} (id: {zone_id})")
 
             # 2. LIST: Verify zone appears in list
-            await asyncio.sleep(0.5)  # Allow time for registration
-            list_data = await mcp.call_tool_success("ha_list_zones", {})
+            list_data = await mcp.call_tool_success("ha_get_zone", {})
 
             zone_found = False
             for zone in list_data.get("zones", []):
@@ -123,8 +121,7 @@ class TestZoneLifecycle:
             logger.info("Zone updated successfully")
 
             # 4. VERIFY UPDATE: Check updated values in list
-            await asyncio.sleep(0.5)
-            list_data = await mcp.call_tool_success("ha_list_zones", {})
+            list_data = await mcp.call_tool_success("ha_get_zone", {})
 
             for zone in list_data.get("zones", []):
                 if zone.get("id") == zone_id:
@@ -145,8 +142,7 @@ class TestZoneLifecycle:
             logger.info("Zone deleted successfully")
 
             # 6. VERIFY DELETE: Zone should not appear in list
-            await asyncio.sleep(0.5)
-            list_data = await mcp.call_tool_success("ha_list_zones", {})
+            list_data = await mcp.call_tool_success("ha_get_zone", {})
 
             for zone in list_data.get("zones", []):
                 assert zone.get("id") != zone_id, (
@@ -181,8 +177,7 @@ class TestZoneLifecycle:
             logger.info(f"Created passive zone: {zone_name} (id: {zone_id})")
 
             # Verify passive mode in list
-            await asyncio.sleep(0.5)
-            list_data = await mcp.call_tool_success("ha_list_zones", {})
+            list_data = await mcp.call_tool_success("ha_get_zone", {})
 
             for zone in list_data.get("zones", []):
                 if zone.get("id") == zone_id:
@@ -203,8 +198,7 @@ class TestZoneLifecycle:
             logger.info("Passive mode updated to False")
 
             # Verify passive mode is now False
-            await asyncio.sleep(0.5)
-            list_data = await mcp.call_tool_success("ha_list_zones", {})
+            list_data = await mcp.call_tool_success("ha_get_zone", {})
 
             for zone in list_data.get("zones", []):
                 if zone.get("id") == zone_id:
@@ -257,8 +251,7 @@ class TestZoneLifecycle:
             logger.info("Updated latitude to 41.0")
 
             # Verify latitude update
-            await asyncio.sleep(0.5)
-            list_data = await mcp.call_tool_success("ha_list_zones", {})
+            list_data = await mcp.call_tool_success("ha_get_zone", {})
             for zone in list_data.get("zones", []):
                 if zone.get("id") == zone_id:
                     assert zone.get("latitude") == 41.0, (
@@ -281,8 +274,7 @@ class TestZoneLifecycle:
             logger.info("Updated both coordinates to (42.0, -73.0)")
 
             # Verify both updated
-            await asyncio.sleep(0.5)
-            list_data = await mcp.call_tool_success("ha_list_zones", {})
+            list_data = await mcp.call_tool_success("ha_get_zone", {})
             for zone in list_data.get("zones", []):
                 if zone.get("id") == zone_id:
                     assert zone.get("latitude") == 42.0, (
@@ -416,13 +408,11 @@ class TestZoneLifecycle:
                 created_zone_ids.append(zone_id)
                 cleanup_tracker.track("zone", zone_id)
                 logger.info(f"Created: {zone_config['name']} (id: {zone_id})")
-                await asyncio.sleep(0.3)
 
             logger.info(f"Created {len(created_zone_ids)} zones")
 
             # Verify all zones exist
-            await asyncio.sleep(0.5)
-            list_data = await mcp.call_tool_success("ha_list_zones", {})
+            list_data = await mcp.call_tool_success("ha_get_zone", {})
             zone_ids_in_list = [z.get("id") for z in list_data.get("zones", [])]
 
             for zone_id in created_zone_ids:
@@ -440,7 +430,6 @@ class TestZoneLifecycle:
                         "radius": 250,  # Update all to same radius
                     },
                 )
-                await asyncio.sleep(0.3)
             logger.info("All zones updated")
 
             # Delete all zones
@@ -449,12 +438,10 @@ class TestZoneLifecycle:
                     "ha_delete_zone",
                     {"zone_id": zone_id},
                 )
-                await asyncio.sleep(0.3)
             logger.info("All zones deleted")
 
             # Verify all deleted
-            await asyncio.sleep(0.5)
-            list_data = await mcp.call_tool_success("ha_list_zones", {})
+            list_data = await mcp.call_tool_success("ha_get_zone", {})
             zone_ids_in_list = [z.get("id") for z in list_data.get("zones", [])]
 
             for zone_id in created_zone_ids:

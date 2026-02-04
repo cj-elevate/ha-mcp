@@ -7,7 +7,6 @@ This represents the critical user journey for Home Assistant label management.
 Note: Tests are designed to work with the Docker test environment.
 """
 
-import asyncio
 import logging
 
 import pytest
@@ -87,7 +86,7 @@ class TestLabelLifecycle:
         try:
             # 1. LIST: Get initial label count
             logger.info("Listing initial labels...")
-            list_result = await mcp_client.call_tool("ha_config_list_labels", {})
+            list_result = await mcp_client.call_tool("ha_config_get_label", {})
             list_data = assert_mcp_success(list_result, "list labels")
             initial_count = list_data.get("count", 0)
             logger.info(f"Initial label count: {initial_count}")
@@ -112,8 +111,7 @@ class TestLabelLifecycle:
             logger.info(f"Created label with ID: {label_id}")
 
             # 3. LIST: Verify label was created
-            await asyncio.sleep(1)  # Allow for propagation
-            list_result = await mcp_client.call_tool("ha_config_list_labels", {})
+            list_result = await mcp_client.call_tool("ha_config_get_label", {})
             list_data = assert_mcp_success(list_result, "list labels after create")
             new_count = list_data.get("count", 0)
             assert new_count == initial_count + 1, (
@@ -148,8 +146,7 @@ class TestLabelLifecycle:
             logger.info("Label updated successfully")
 
             # 5. VERIFY: Check update was applied
-            await asyncio.sleep(1)
-            list_result = await mcp_client.call_tool("ha_config_list_labels", {})
+            list_result = await mcp_client.call_tool("ha_config_get_label", {})
             list_data = assert_mcp_success(list_result, "list labels after update")
             labels = list_data.get("labels", [])
             our_label = next(
@@ -173,8 +170,7 @@ class TestLabelLifecycle:
             logger.info("Label deleted successfully")
 
             # 7. VERIFY: Label is gone
-            await asyncio.sleep(1)
-            list_result = await mcp_client.call_tool("ha_config_list_labels", {})
+            list_result = await mcp_client.call_tool("ha_config_get_label", {})
             list_data = assert_mcp_success(list_result, "list labels after delete")
             final_count = list_data.get("count", 0)
             assert final_count == initial_count, (
@@ -227,9 +223,10 @@ class TestLabelLifecycle:
             # 2. ASSIGN: Assign label to entity
             logger.info(f"Assigning label {label_id} to entity {test_entity}")
             assign_result = await mcp_client.call_tool(
-                "ha_assign_label",
+                "ha_manage_entity_labels",
                 {
                     "entity_id": test_entity,
+                    "operation": "set",
                     "labels": [label_id],
                 },
             )
@@ -248,9 +245,10 @@ class TestLabelLifecycle:
             # 4. CLEAR: Remove labels from entity
             logger.info(f"Clearing labels from entity {test_entity}")
             clear_result = await mcp_client.call_tool(
-                "ha_assign_label",
+                "ha_manage_entity_labels",
                 {
                     "entity_id": test_entity,
+                    "operation": "set",
                     "labels": [],  # Empty list clears all labels
                 },
             )
@@ -303,9 +301,10 @@ class TestLabelLifecycle:
             # 2. ASSIGN: Assign all labels to entity
             logger.info(f"Assigning {len(created_label_ids)} labels to {test_entity}")
             assign_result = await mcp_client.call_tool(
-                "ha_assign_label",
+                "ha_manage_entity_labels",
                 {
                     "entity_id": test_entity,
+                    "operation": "set",
                     "labels": created_label_ids,
                 },
             )
@@ -324,9 +323,10 @@ class TestLabelLifecycle:
             subset_labels = created_label_ids[:2]  # First two labels only
             logger.info(f"Updating to subset of labels: {subset_labels}")
             update_result = await mcp_client.call_tool(
-                "ha_assign_label",
+                "ha_manage_entity_labels",
                 {
                     "entity_id": test_entity,
+                    "operation": "set",
                     "labels": subset_labels,
                 },
             )
@@ -349,9 +349,10 @@ class TestLabelLifecycle:
 
             # 4. CLEAR: Clear all labels
             await mcp_client.call_tool(
-                "ha_assign_label",
+                "ha_manage_entity_labels",
                 {
                     "entity_id": test_entity,
+                    "operation": "set",
                     "labels": [],
                 },
             )
@@ -404,9 +405,10 @@ class TestLabelValidation:
         logger.info("Testing assign to nonexistent entity...")
 
         assign_result = await mcp_client.call_tool(
-            "ha_assign_label",
+            "ha_manage_entity_labels",
             {
                 "entity_id": "light.nonexistent_entity_12345",
+                "operation": "set",
                 "labels": ["some_label"],
             },
         )
@@ -480,7 +482,7 @@ async def test_label_list_empty_state(mcp_client):
     """
     logger.info("Testing label list...")
 
-    list_result = await mcp_client.call_tool("ha_config_list_labels", {})
+    list_result = await mcp_client.call_tool("ha_config_get_label", {})
     list_data = assert_mcp_success(list_result, "list labels")
 
     # Check structure

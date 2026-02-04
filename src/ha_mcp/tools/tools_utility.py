@@ -25,7 +25,14 @@ def register_utility_tools(mcp: Any, client: Any, **kwargs: Any) -> None:
     DEFAULT_LOGBOOK_LIMIT = 50
     MAX_LOGBOOK_LIMIT = 500
 
-    @mcp.tool(annotations={"idempotentHint": True, "readOnlyHint": True, "tags": ["history"], "title": "Get Logbook Entries"})
+    @mcp.tool(
+        annotations={
+            "idempotentHint": True,
+            "readOnlyHint": True,
+            "tags": ["history"],
+            "title": "Get Logbook Entries",
+        }
+    )
     @log_tool_usage
     async def ha_get_logbook(
         hours_back: int | str = 1,
@@ -160,7 +167,9 @@ def register_utility_tools(mcp: Any, client: Any, **kwargs: Any) -> None:
                 "end_time": end_dt.isoformat(),
                 "entity_filter": entity_id,
                 "total_entries": total_entries,
-                "returned_entries": len(paginated_entries) if isinstance(paginated_entries, list) else 1,
+                "returned_entries": len(paginated_entries)
+                if isinstance(paginated_entries, list)
+                else 1,
                 "limit": effective_limit,
                 "offset": offset_int,
                 "has_more": has_more,
@@ -173,7 +182,7 @@ def register_utility_tools(mcp: Any, client: Any, **kwargs: Any) -> None:
                 param_parts = [
                     f"hours_back={hours_back_int}",
                     f"limit={effective_limit}",
-                    f"offset={next_offset}"
+                    f"offset={next_offset}",
                 ]
                 if entity_id:
                     param_parts.append(f"entity_id={entity_id}")
@@ -189,14 +198,36 @@ def register_utility_tools(mcp: Any, client: Any, **kwargs: Any) -> None:
             return await add_timezone_metadata(client, logbook_data)
 
         except Exception as e:
+            error_str = str(e)
+            suggestions = []
+
+            # Detect 500 errors (server crash from heavy query)
+            if "500" in error_str:
+                suggestions = [
+                    "The query returned too many results causing a server error (500).",
+                    "This often happens with very active entities or long time periods.",
+                    "Try reducing 'hours_back' parameter (e.g., from 24 to 1 hour)",
+                    "Add a specific 'entity_id' filter to narrow down results",
+                    "If debugging an automation, filter by that automation's entity_id",
+                    "Use ha_bug_report tool to check Home Assistant logs for crash details",
+                ]
+
             error_data = {
                 "success": False,
-                "error": f"Failed to retrieve logbook: {str(e)}",
+                "error": f"Failed to retrieve logbook: {error_str}",
                 "period": f"{hours_back_int} hours back from {end_dt.isoformat()}",
+                "suggestions": suggestions if suggestions else None,
             }
             return await add_timezone_metadata(client, error_data)
 
-    @mcp.tool(annotations={"idempotentHint": True, "readOnlyHint": True, "tags": ["docs"], "title": "Evaluate Template"})
+    @mcp.tool(
+        annotations={
+            "idempotentHint": True,
+            "readOnlyHint": True,
+            "tags": ["docs"],
+            "title": "Evaluate Template",
+        }
+    )
     @log_tool_usage
     async def ha_eval_template(
         template: str, timeout: int = 3, report_errors: bool | str = True
@@ -329,7 +360,10 @@ def register_utility_tools(mcp: Any, client: Any, **kwargs: Any) -> None:
         **For template documentation:** https://www.home-assistant.io/docs/configuration/templating/
         """
         # Coerce boolean parameter that may come as string from XML-style calls
-        report_errors_bool = coerce_bool_param(report_errors, "report_errors", default=True) or True
+        report_errors_bool = coerce_bool_param(
+            report_errors, "report_errors", default=True
+        )
+        assert report_errors_bool is not None  # default=True guarantees non-None
 
         try:
             # Generate unique ID for the template evaluation request
@@ -389,17 +423,32 @@ def register_utility_tools(mcp: Any, client: Any, **kwargs: Any) -> None:
                 }
 
         except Exception as e:
+            error_str = str(e)
+            suggestions = [
+                "Check Home Assistant WebSocket connection",
+                "Verify template syntax is valid Jinja2",
+                "Try a simpler template to test basic functionality",
+                "Check if referenced entities exist",
+                "Ensure template doesn't exceed timeout limit",
+            ]
+
+            # Add specific suggestions for 403 errors
+            if "403" in error_str and "Forbidden" in error_str:
+                suggestions = [
+                    "The request was blocked (403 Forbidden) - this may be caused by:",
+                    "  • Reverse proxy security rules (Apache, Nginx, Traefik)",
+                    "  • Rate limiting from multiple simultaneous requests",
+                    "  • Complex template triggering security filters",
+                    "Try simplifying the template (remove newlines, reduce complexity)",
+                    "Break complex templates into multiple simpler calls",
+                    "Use ha_bug_report tool to check Home Assistant logs for details",
+                ] + suggestions
+
             return {
                 "success": False,
                 "template": template,
-                "error": f"Template evaluation failed: {str(e)}",
-                "suggestions": [
-                    "Check Home Assistant WebSocket connection",
-                    "Verify template syntax is valid Jinja2",
-                    "Try a simpler template to test basic functionality",
-                    "Check if referenced entities exist",
-                    "Ensure template doesn't exceed timeout limit",
-                ],
+                "error": f"Template evaluation failed: {error_str}",
+                "suggestions": suggestions,
             }
 
     @mcp.tool(annotations={"readOnlyHint": True, "title": "Get Domain Docs"})

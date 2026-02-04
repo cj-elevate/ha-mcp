@@ -3,7 +3,7 @@ Voice Assistant Exposure E2E Tests
 
 Tests for voice assistant exposure tools:
 - ha_expose_entity - Expose/hide entities from voice assistants
-- ha_list_exposed_entities - List entity exposure status
+- ha_get_entity_exposure - List entity exposure status
 - ha_get_entity_exposure - Get specific entity exposure
 
 Note: These tests may have limited functionality in test environments
@@ -11,7 +11,6 @@ without Nabu Casa cloud configured. The tests focus on API functionality
 rather than actual voice assistant integration.
 """
 
-import asyncio
 import logging
 
 import pytest
@@ -32,9 +31,9 @@ class TestVoiceAssistantExposure:
 
         This is a read-only operation that should always succeed.
         """
-        logger.info("Testing ha_list_exposed_entities")
+        logger.info("Testing ha_get_entity_exposure")
 
-        result = await mcp_client.call_tool("ha_list_exposed_entities", {})
+        result = await mcp_client.call_tool("ha_get_entity_exposure", {})
 
         data = parse_mcp_result(result)
         assert data.get("success"), f"Failed to list exposed entities: {data}"
@@ -53,10 +52,10 @@ class TestVoiceAssistantExposure:
         """
         Test: Filter exposed entities by specific assistant
         """
-        logger.info("Testing ha_list_exposed_entities with assistant filter")
+        logger.info("Testing ha_get_entity_exposure with assistant filter")
 
         result = await mcp_client.call_tool(
-            "ha_list_exposed_entities",
+            "ha_get_entity_exposure",
             {"assistant": "conversation"},
         )
 
@@ -75,10 +74,10 @@ class TestVoiceAssistantExposure:
         """
         Test: Invalid assistant name should fail
         """
-        logger.info("Testing ha_list_exposed_entities with invalid assistant")
+        logger.info("Testing ha_get_entity_exposure with invalid assistant")
 
         result = await mcp_client.call_tool(
-            "ha_list_exposed_entities",
+            "ha_get_entity_exposure",
             {"assistant": "invalid_assistant"},
         )
 
@@ -108,7 +107,6 @@ class TestVoiceAssistantExposure:
         entity_id = "input_boolean.test_exposure_check"
         cleanup_tracker.track("input_boolean", entity_id)
 
-        await asyncio.sleep(1)
 
         # Get exposure settings
         result = await mcp_client.call_tool(
@@ -155,7 +153,6 @@ class TestVoiceAssistantExposure:
         entity_id = "input_boolean.test_expose_entity"
         cleanup_tracker.track("input_boolean", entity_id)
 
-        await asyncio.sleep(1)
 
         # Expose to conversation assistant
         expose_result = await mcp_client.call_tool(
@@ -211,7 +208,6 @@ class TestVoiceAssistantExposure:
         entity_id = "input_boolean.test_hide_entity"
         cleanup_tracker.track("input_boolean", entity_id)
 
-        await asyncio.sleep(1)
 
         # Hide from conversation assistant
         hide_result = await mcp_client.call_tool(
@@ -256,7 +252,6 @@ class TestVoiceAssistantExposure:
             entities.append(entity_id)
             cleanup_tracker.track("input_boolean", entity_id)
 
-        await asyncio.sleep(1)
 
         # Expose multiple entities at once
         expose_result = await mcp_client.call_tool(
@@ -309,7 +304,7 @@ async def test_voice_exposure_basic(mcp_client):
     """
     logger.info("Running basic voice exposure test")
 
-    result = await mcp_client.call_tool("ha_list_exposed_entities", {})
+    result = await mcp_client.call_tool("ha_get_entity_exposure", {})
     data = parse_mcp_result(result)
 
     assert data.get("success"), f"Failed: {data}"

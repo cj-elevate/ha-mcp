@@ -21,36 +21,97 @@ from .util_helpers import parse_json_param
 logger = logging.getLogger(__name__)
 
 
-def _normalize_automation_config(config: dict[str, Any]) -> dict[str, Any]:
+def _normalize_automation_config(
+    config: Any,
+    parent_key: str | None = None,
+    in_choose_or_if: bool = False,
+    is_root: bool = True,
+) -> Any:
     """
-    Normalize automation config field names to HA API format.
+    Recursively normalize automation config field names to HA API format.
 
     Home Assistant accepts both singular ('trigger', 'action', 'condition')
     and plural ('triggers', 'actions', 'conditions') field names in YAML,
-    but the API expects singular forms. This function normalizes plural
-    to singular for consistency.
+    but the API expects singular forms at the root level.
+
+    IMPORTANT: 'triggers' → 'trigger' and 'actions' → 'action' normalization
+    is ONLY applied at the root level. Deeper in the tree these keys are either
+    invalid or semantically different, and normalizing them can produce keys
+    that Home Assistant rejects (e.g., 'action' inside a delay object).
+
+    IMPORTANT: Inside 'choose' and 'if' action blocks, the 'conditions' key
+    (plural) is required by the HA schema and should NOT be normalized to
+    'condition' (singular).
+
+    IMPORTANT: Inside compound condition blocks ('or', 'and', 'not'), the
+    'conditions' key (plural) is required and should NOT be normalized to
+    'condition' (singular).
 
     Args:
-        config: Automation configuration dict
+        config: Automation configuration (dict, list, or primitive)
+        parent_key: The parent dictionary key (for context tracking)
+        in_choose_or_if: Whether we're inside a choose/if option that requires
+                         'conditions' (plural) to remain unchanged
+        is_root: Whether this is the root-level automation config dict.
+                 Only root level gets 'triggers'→'trigger' and
+                 'actions'→'action' normalization.
 
     Returns:
-        Normalized configuration with singular field names
+        Normalized configuration with singular field names at root level,
+        but preserving 'conditions' (plural) inside choose/if blocks and
+        compound condition blocks (or/and/not)
     """
+    # Handle lists - recursively process each item
+    if isinstance(config, list):
+        # If parent is 'choose' or 'if', items are options that need 'conditions' preserved
+        is_option_list = parent_key in ("choose", "if")
+        return [
+            _normalize_automation_config(
+                item, parent_key, is_option_list, is_root=False
+            )
+            for item in config
+        ]
+
+    # Handle primitives (strings, numbers, etc.)
+    if not isinstance(config, dict):
+        return config
+
+    # Process dictionary
     normalized = config.copy()
 
-    # Map plural field names to singular (HA API format)
-    field_mappings = {
-        "triggers": "trigger",
-        "actions": "action",
-        "conditions": "condition",
-    }
+    # Check if this dict is a compound condition block (or/and/not)
+    # that needs its nested 'conditions' key preserved
+    is_compound_condition_block = normalized.get("condition") in ("or", "and", "not")
 
+    # Build field mappings based on context
+    field_mappings: dict[str, str] = {}
+
+    # 'triggers' → 'trigger' and 'actions' → 'action' ONLY at root level.
+    # Deeper in the tree these keys are invalid and normalizing them produces
+    # keys HA rejects (e.g., 'action' inside a delay object — see issue #498).
+    if is_root:
+        field_mappings["triggers"] = "trigger"
+        field_mappings["actions"] = "action"
+
+    # 'sequences' → 'sequence' is safe at any level (only meaningful in choose options)
+    field_mappings["sequences"] = "sequence"
+
+    # Only add 'conditions' mapping if NOT inside a choose/if option
+    # AND NOT a compound condition block (or/and/not)
+    if not in_choose_or_if and not is_compound_condition_block:
+        field_mappings["conditions"] = "condition"
+
+    # Apply field mapping to current level
     for plural, singular in field_mappings.items():
         if plural in normalized and singular not in normalized:
             normalized[singular] = normalized.pop(plural)
         elif plural in normalized and singular in normalized:
             # Both exist - prefer singular, remove plural
             del normalized[plural]
+
+    # Recursively process all values in the dictionary
+    for key, value in normalized.items():
+        normalized[key] = _normalize_automation_config(value, key, is_root=False)
 
     return normalized
 
@@ -132,7 +193,14 @@ def _strip_empty_automation_fields(config: dict[str, Any]) -> dict[str, Any]:
 def register_config_automation_tools(mcp: Any, client: Any, **kwargs: Any) -> None:
     """Register Home Assistant automation configuration tools."""
 
-    @mcp.tool(annotations={"idempotentHint": True, "readOnlyHint": True, "tags": ["automation"], "title": "Get Automation Config"})
+    @mcp.tool(
+        annotations={
+            "idempotentHint": True,
+            "readOnlyHint": True,
+            "tags": ["automation"],
+            "title": "Get Automation Config",
+        }
+    )
     @log_tool_usage
     async def ha_config_get_automation(
         identifier: Annotated[
@@ -197,7 +265,13 @@ def register_config_automation_tools(mcp: Any, client: Any, **kwargs: Any) -> No
                 ]
             return error_response
 
-    @mcp.tool(annotations={"destructiveHint": True, "tags": ["automation"], "title": "Create or Update Automation"})
+    @mcp.tool(
+        annotations={
+            "destructiveHint": True,
+            "tags": ["automation"],
+            "title": "Create or Update Automation",
+        }
+    )
     @log_tool_usage
     async def ha_config_set_automation(
         config: Annotated[
@@ -310,6 +384,14 @@ def register_config_automation_tools(mcp: Any, client: Any, **kwargs: Any) -> No
             }
         })
 
+        PREFER NATIVE SOLUTIONS OVER TEMPLATES:
+        Before using template triggers/conditions/actions, check if a native option exists:
+        - Use `condition: state` with `state: [list]` instead of template for multiple states
+        - Use `condition: state` with `attribute:` instead of template for attribute checks
+        - Use `condition: numeric_state` instead of template for number comparisons
+        - Use `wait_for_trigger` instead of `wait_template` when waiting for state changes
+        - Use `choose` action instead of template-based service names
+
         TRIGGER TYPES: time, time_pattern, sun, state, numeric_state, event, device, zone, template, and more
         CONDITION TYPES: state, numeric_state, time, sun, template, device, zone, and more
         ACTION TYPES: service calls, delays, wait_for_trigger, wait_template, if/then/else, choose, repeat, parallel
@@ -365,9 +447,7 @@ def register_config_automation_tools(mcp: Any, client: Any, **kwargs: Any) -> No
                     missing_fields=missing_fields,
                 )
 
-            result = await client.upsert_automation_config(
-                config_dict, identifier
-            )
+            result = await client.upsert_automation_config(config_dict, identifier)
             return {
                 "success": True,
                 **result,
@@ -391,7 +471,14 @@ def register_config_automation_tools(mcp: Any, client: Any, **kwargs: Any) -> No
                 ]
             return error_response
 
-    @mcp.tool(annotations={"destructiveHint": True, "idempotentHint": True, "tags": ["automation"], "title": "Remove Automation"})
+    @mcp.tool(
+        annotations={
+            "destructiveHint": True,
+            "idempotentHint": True,
+            "tags": ["automation"],
+            "title": "Remove Automation",
+        }
+    )
     @log_tool_usage
     async def ha_config_remove_automation(
         identifier: Annotated[

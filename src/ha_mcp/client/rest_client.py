@@ -577,6 +577,26 @@ class HomeAssistantClient:
                 "result": response.get("result", "ok"),
                 "operation": "deleted",
             }
+        except HomeAssistantAPIError as e:
+            if e.status_code == 404:
+                raise HomeAssistantAPIError(
+                    f"Automation not found: {identifier} (unique_id: {unique_id})",
+                    status_code=404,
+                )
+            elif e.status_code == 405:
+                raise HomeAssistantAPIError(
+                    f"Cannot delete automation '{identifier}': The HTTP DELETE method is blocked. "
+                    f"This typically occurs when running ha-mcp as a Home Assistant add-on, because "
+                    f"the Supervisor ingress proxy only allows GET and POST requests. "
+                    f"WORKAROUNDS: "
+                    f"(1) Use ha-mcp via pip, Docker, or as an external MCP server instead of the add-on. "
+                    f"(2) Use a long-lived access token to connect directly to Home Assistant's API. "
+                    f"(3) As a fallback, disable the automation and rename it with a 'DELETE_' prefix "
+                    f"(e.g., 'DELETE_{identifier}') so you can identify and manually delete it later "
+                    f"via the Home Assistant UI (Settings > Automations & Scenes).",
+                    status_code=405,
+                )
+            raise
         except Exception as e:
             if "404" in str(e):
                 raise HomeAssistantAPIError(
@@ -585,36 +605,139 @@ class HomeAssistantClient:
                 )
             raise
 
+    async def start_config_flow(
+        self, handler: str, context: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        """
+        Start a config entry flow.
+
+        Args:
+            handler: Integration domain (e.g., "template", "group")
+            context: Optional context (e.g., {"source": "user"})
+
+        Returns:
+            Flow data with flow_id, step_id, data_schema
+
+        Raises:
+            HomeAssistantAPIError: If flow start fails
+        """
+        payload = {"handler": handler}
+        if context:
+            payload["context"] = context
+
+        logger.debug(f"Starting config flow for handler: {handler}")
+        return await self._request("POST", "/config/config_entries/flow", json=payload)
+
+    async def submit_config_flow_step(
+        self, flow_id: str, user_input: dict[str, Any]
+    ) -> dict[str, Any]:
+        """
+        Submit data for a config flow step.
+
+        Args:
+            flow_id: Flow ID from start_config_flow or previous step
+            user_input: Form data for current step
+
+        Returns:
+            Flow result: type = "create_entry" | "form" | "abort"
+
+        Raises:
+            HomeAssistantAPIError: If flow submission fails
+        """
+        logger.debug(f"Submitting flow step for flow_id: {flow_id}")
+        return await self._request(
+            "POST", f"/config/config_entries/flow/{flow_id}", json=user_input
+        )
+
+    async def get_config_entry(self, entry_id: str) -> dict[str, Any]:
+        """
+        Get config entry details.
+
+        Note: Home Assistant doesn't have a direct REST API endpoint for individual
+        config entries. This method lists all entries and filters by entry_id.
+
+        Args:
+            entry_id: Config entry ID
+
+        Returns:
+            Full config entry data
+
+        Raises:
+            HomeAssistantAPIError: If entry not found or API error
+        """
+        logger.debug(f"Getting config entry: {entry_id}")
+        # List all entries and filter by entry_id
+        entries = await self._request("GET", "/config/config_entries/entry")
+
+        if not isinstance(entries, list):
+            raise HomeAssistantAPIError(
+                "Unexpected response format from config entries API",
+                status_code=500,
+            )
+
+        for entry in entries:
+            if entry.get("entry_id") == entry_id:
+                return entry
+
+        raise HomeAssistantAPIError(
+            f"Config entry not found: {entry_id}",
+            status_code=404,
+        )
+
     async def send_websocket_message(self, message: dict[str, Any]) -> dict[str, Any]:
-        """Send message via WebSocket and wait for response."""
-        ws_client = None
-        try:
-            # Use client's own URL and token for WebSocket connection
-            from .websocket_client import HomeAssistantWebSocketClient
+        """Send message via WebSocket and wait for response.
 
-            ws_client = HomeAssistantWebSocketClient(self.base_url, self.token)
+        Uses the global WebSocket singleton to avoid race conditions from
+        parallel tool calls creating multiple simultaneous connections.
+        """
+        from .websocket_client import get_websocket_client
 
-            # Connect if not already connected
-            if not ws_client.is_connected:
-                await ws_client.connect()
+        max_retries = 2
+        retry_delay = 0.5  # seconds
 
-            # Special handling for render_template which returns an event with the actual result
-            if message.get("type") == "render_template":
-                return await self._handle_render_template(ws_client, message)
+        for attempt in range(max_retries):
+            try:
+                # Use singleton WebSocket client (shared, reused connection)
+                ws_client = await get_websocket_client()
 
-            # Extract command type and parameters for other commands
-            message_copy = message.copy()
-            command_type = message_copy.pop("type")
-            result = await ws_client.send_command(command_type, **message_copy)
+                # Special handling for render_template which returns an event with the actual result
+                if message.get("type") == "render_template":
+                    return await self._handle_render_template(ws_client, message)
 
-            return result
-        except Exception as e:
-            logger.error(f"WebSocket message failed: {e}")
-            return {"success": False, "error": str(e)}
-        finally:
-            # Clean up WebSocket connection
-            if ws_client and ws_client.is_connected:
-                await ws_client.disconnect()
+                # Extract command type and parameters for other commands
+                message_copy = message.copy()
+                command_type = message_copy.pop("type")
+                result = await ws_client.send_command(command_type, **message_copy)
+
+                return result
+
+            except Exception as e:
+                error_str = str(e)
+
+                # Detect transient 403 errors (rate limiting / reverse proxy throttling)
+                if "403" in error_str and "Forbidden" in error_str:
+                    if attempt < max_retries - 1:
+                        logger.warning(
+                            f"WebSocket 403 error (attempt {attempt + 1}/{max_retries}), "
+                            f"retrying after {retry_delay}s: {error_str}"
+                        )
+                        await asyncio.sleep(retry_delay)
+                        continue
+                    else:
+                        logger.error(f"WebSocket 403 error after {max_retries} attempts: {error_str}")
+                        return {
+                            "success": False,
+                            "error": f"WebSocket request blocked (403 Forbidden): {error_str}",
+                            "suggestions": [
+                                "This may be caused by a reverse proxy or security filter",
+                                "Try simplifying the request (e.g., shorter templates, fewer parameters)",
+                                "If using complex templates, try breaking them into smaller parts",
+                                "Check if your Home Assistant is behind a reverse proxy with security rules",
+                            ],
+                        }
+
+                logger.error(f"WebSocket message failed: {e}")
+                return {"success": False, "error": str(e)}
 
     async def _handle_render_template(
         self, ws_client: Any, message: dict[str, Any]
@@ -738,8 +861,13 @@ class HomeAssistantClient:
             # Validate required fields
             if "alias" not in config:
                 config["alias"] = script_id
-            if "sequence" not in config:
-                raise ValueError("Script configuration must include 'sequence'")
+
+            # Validate that either sequence or use_blueprint is present
+            if "sequence" not in config and "use_blueprint" not in config:
+                raise ValueError(
+                    "Script configuration must include either 'sequence' (regular scripts) "
+                    "or 'use_blueprint' (blueprint-based scripts)"
+                )
 
             response = await self._request("POST", endpoint, json=config)
 
@@ -772,10 +900,17 @@ class HomeAssistantClient:
                 )
             elif e.status_code == 405:
                 raise HomeAssistantAPIError(
-                    f"Cannot delete script '{script_id}': This script is defined in YAML configuration files "
-                    f"(e.g., scripts.yaml or configuration.yaml) and cannot be deleted via the API. "
-                    f"Only UI-created scripts can be deleted through this method. "
-                    f"To remove YAML-defined scripts, edit the configuration file directly.",
+                    f"Cannot delete script '{script_id}': The HTTP DELETE method is blocked. "
+                    f"This typically occurs when running ha-mcp as a Home Assistant add-on, because "
+                    f"the Supervisor ingress proxy only allows GET and POST requests. "
+                    f"It may also occur if the script is defined in YAML configuration files. "
+                    f"WORKAROUNDS: "
+                    f"(1) Use ha-mcp via pip, Docker, or as an external MCP server instead of the add-on. "
+                    f"(2) Use a long-lived access token to connect directly to Home Assistant's API. "
+                    f"(3) If the script is YAML-defined, edit the configuration file directly. "
+                    f"(4) As a fallback, disable the script and rename it with a 'DELETE_' prefix "
+                    f"(e.g., 'DELETE_{script_id}') so you can identify and manually delete it later "
+                    f"via the Home Assistant UI (Settings > Automations & Scenes > Scripts).",
                     status_code=405,
                 )
             raise

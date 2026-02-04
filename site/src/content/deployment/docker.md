@@ -1,16 +1,11 @@
 ---
-type: note
-updated: 2026-01-03
-area: servers
-project: ha-mcp-extended
 name: Docker
 description: Run ha-mcp in a container
 icon: docker
-forConnections:
-  - local
-  - network
+forConnections: ['local', 'network', 'remote']
 order: 2
 ---
+
 ## For Local Machine (stdio)
 
 Use Docker in your AI client config:
@@ -81,6 +76,8 @@ docker rm ha-mcp
 docker pull ghcr.io/homeassistant-ai/ha-mcp:latest
 ```
 
+---
+
 ## Custom SSL Certificates
 
 If your Home Assistant is behind a reverse proxy with self-signed certificates, you need to provide a CA bundle that includes both your custom CA and the standard root CAs.
@@ -105,10 +102,22 @@ docker run -d --name ha-mcp \
   ha-mcp-web
 ```
 
+---
+
+## Server Mode Comparison
+
+| Mode | Command | Use Case | Auth Method |
+|------|---------|----------|-------------|
+| **stdio** | (default) | Claude Desktop, local clients | Pre-configured token |
+| **ha-mcp-web** | HTTP server | LAN clients, single user | Pre-configured token |
+| **ha-mcp-oauth** | OAuth HTTP server | Claude.ai, multi-user | OAuth consent form |
+| **ha-mcp-sse** | SSE server | Legacy SSE clients | Pre-configured token |
+
 ## Requirements
 
 - Docker or Docker Desktop installed
 - Network access to Home Assistant
+- For OAuth mode: HTTPS endpoint (use Cloudflare Tunnel or similar)
 
 ## Troubleshooting
 

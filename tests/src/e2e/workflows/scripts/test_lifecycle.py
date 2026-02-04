@@ -16,7 +16,6 @@ production-level functionality and compatibility.
 Tests are designed for Docker Home Assistant test environment at localhost:8124.
 """
 
-import asyncio
 import json
 import logging
 import time
@@ -201,7 +200,6 @@ async def verify_script_execution_state(
                 return state_data
 
             consecutive_failures = 0  # Reset on successful API call
-            await asyncio.sleep(0.8)  # Increased from 0.5s to 0.8s
         except Exception as e:
             consecutive_failures += 1
             logger.debug(
@@ -213,10 +211,7 @@ async def verify_script_execution_state(
                 logger.debug(
                     f"Multiple consecutive failures for {script_entity}, extending wait time"
                 )
-                await asyncio.sleep(2.0)
                 consecutive_failures = 0
-            else:
-                await asyncio.sleep(0.8)
 
     logger.warning(f"Could not verify state for {script_entity} within {timeout}s")
     return {"success": False, "timeout": True}
@@ -315,7 +310,6 @@ class TestScriptOrchestration:
             logger.info("✅ Script executed successfully")
 
             # 5. VERIFY: Check script state shows execution
-            await asyncio.sleep(2)  # Allow execution to complete
 
             state_data = await verify_script_execution_state(
                 mcp_client, script_entity, timeout=10
@@ -451,7 +445,6 @@ class TestScriptOrchestration:
             logger.info("✅ Script execution initiated")
 
             # Allow script to complete (should take about 3 seconds total)
-            await asyncio.sleep(4)
             logger.info("✅ Script execution completed")
 
             # Verify final light state (should be off after script completes)
@@ -522,7 +515,6 @@ class TestScriptOrchestration:
             logger.info(f"✅ Created parameterized script: {script_entity}")
 
             # 2. VERIFY: Configuration includes fields and templating
-            await asyncio.sleep(wait_for_script_registration())
 
             get_data = await mcp.call_tool_success(
                 "ha_config_get_script",
@@ -587,7 +579,6 @@ class TestScriptOrchestration:
             )
 
             # Allow execution to complete (should take test_delay + processing time)
-            await asyncio.sleep(test_delay + 1)
 
             # Optional: Check if script is still running in queued mode
             state_data = await verify_script_execution_state(
@@ -634,7 +625,6 @@ class TestScriptOrchestration:
             logger.info(f"✅ Created initial script version: {script_entity}")
 
             # 2. VERIFY: Initial configuration
-            await asyncio.sleep(wait_for_script_registration())
 
             get_data = await mcp.call_tool_success(
                 "ha_config_get_script",
@@ -677,7 +667,6 @@ class TestScriptOrchestration:
             logger.info("✅ Script updated successfully")
 
             # 4. VERIFY: Updated configuration
-            await asyncio.sleep(wait_for_script_registration())
 
             updated_get_data = await mcp.call_tool_success(
                 "ha_config_get_script",
@@ -716,7 +705,6 @@ class TestScriptOrchestration:
             )
             logger.info("✅ Updated script executed successfully")
 
-            await asyncio.sleep(3)  # Allow execution to complete
 
             # 6. CLEANUP: Delete script
             delete_data = await mcp.call_tool_success(
@@ -781,10 +769,8 @@ class TestScriptOrchestration:
                 created_scripts.append((script_id, script_entity, mode))
                 logger.info(f"✅ Created {mode} mode script: {script_entity}")
 
-                await asyncio.sleep(1)  # Small delay between creations
 
             # VERIFY: All scripts created with correct modes
-            await asyncio.sleep(wait_for_script_registration(len(created_scripts)))
 
             for script_id, script_entity, expected_mode in created_scripts:
                 get_data = await mcp.call_tool_success(
@@ -841,11 +827,9 @@ class TestScriptOrchestration:
                     )
                     logger.info(f"✅ Second execution initiated for {mode} mode")
 
-                await asyncio.sleep(0.5)  # Small delay between different scripts
 
             # Allow all executions to complete with generous timeout
             logger.info("⏳ Allowing all script executions to complete...")
-            await asyncio.sleep(6)  # Increased timeout for multiple executions
 
             # CLEANUP: Delete all test scripts
             for script_id, script_entity, mode in created_scripts:
@@ -854,7 +838,6 @@ class TestScriptOrchestration:
                     { "script_id": script_id}
                 )
                 logger.debug(f"🗑️ Deleted {mode} script: {script_entity}")
-                await asyncio.sleep(0.3)  # Small delay between deletions
 
             logger.info("✅ All execution mode scripts cleaned up")
 
@@ -930,7 +913,6 @@ class TestScriptOrchestration:
                     logger.error(f"❌ Failed to create {script_id}: {e}")
                     failed_scripts.append((script_id, str(e)))
 
-                await asyncio.sleep(0.5)  # Small delay between creations
 
             if failed_scripts:
                 logger.warning(
@@ -942,7 +924,6 @@ class TestScriptOrchestration:
             )
 
             # 2. VERIFY: All successfully created scripts exist and have correct configurations
-            await asyncio.sleep(wait_for_script_registration(len(created_scripts)))
 
             logger.info("🔍 Verifying all scripts exist...")
             verified_scripts = []
@@ -992,7 +973,6 @@ class TestScriptOrchestration:
                     logger.error(f"❌ Failed to execute {script_entity}: {e}")
 
             # Allow all executions to complete (max delay is 2s + processing)
-            await asyncio.sleep(4)
             logger.info(
                 f"✅ Bulk execution completed: {len(executed_scripts)} scripts executed"
             )
@@ -1014,7 +994,6 @@ class TestScriptOrchestration:
                     logger.error(f"❌ Failed to delete {script_entity}: {e}")
                     failed_deletions.append((script_id, script_entity, str(e)))
 
-                await asyncio.sleep(0.3)  # Small delay between deletions
 
             logger.info(
                 f"✅ Bulk deletion completed: {len(deleted_scripts)} deleted, {len(failed_deletions)} failed"
@@ -1180,3 +1159,192 @@ async def test_script_search_and_discovery(mcp_client):
             )
 
     logger.info("✅ Script search and discovery test completed")
+
+
+@pytest.fixture
+async def script_blueprint_path(mcp_client):
+    """Fixture to get the path of the first available script blueprint."""
+    async with MCPAssertions(mcp_client) as mcp:
+        list_result = await mcp.call_tool_success(
+            "ha_get_blueprint",
+            {"domain": "script"},
+        )
+        blueprints = list_result.get("blueprints", [])
+        if not blueprints:
+            pytest.skip("No script blueprints available for testing")
+        return blueprints[0]["path"]
+
+
+@pytest.mark.e2e
+@pytest.mark.asyncio
+async def test_blueprint_script_lifecycle(
+    mcp_client, cleanup_tracker, script_blueprint_path
+):
+    """
+    Test: Create and update blueprint-based script
+
+    Validates that blueprint scripts can be created and updated without
+    requiring sequence field, fixing issue #466.
+    """
+    logger.info("Testing blueprint script lifecycle (issue #466)...")
+
+    async with MCPAssertions(mcp_client) as mcp:
+        # Use the blueprint path from fixture
+        blueprint_path = script_blueprint_path
+        logger.info(f"Using blueprint: {blueprint_path}")
+
+        # Step 2: Get blueprint details to understand required inputs
+        detail_result = await mcp.call_tool_success(
+            "ha_get_blueprint",
+            {"path": blueprint_path, "domain": "script"},
+        )
+
+        inputs = detail_result.get("inputs", {})
+        logger.info(f"Blueprint has {len(inputs)} inputs")
+
+        # Step 3: Create script from blueprint (no sequence field)
+        # Note: We can't actually test creation with empty inputs since HA validates
+        # blueprint inputs. Instead, we test that the tool ACCEPTS the config without
+        # sequence field (it will fail later at HA validation, not our validation)
+        script_config = {
+            "alias": "Test Blueprint Script E2E",
+            "use_blueprint": {
+                "path": blueprint_path,
+                "input": {},  # Empty inputs - will fail HA validation but pass our validation
+            },
+        }
+
+        # This should reach HA (proving our validation passed) even if HA rejects it
+        # If our validation failed, we'd get a different error code
+        create_result = await mcp_client.call_tool(
+            "ha_config_set_script",
+            {"script_id": "test_blueprint_script_e2e", "config": script_config},
+        )
+        create_parsed = enhanced_parse_mcp_result(create_result)
+
+        # Check if it was our validation or HA's validation that failed
+        if not create_parsed.get("success"):
+            error_msg = str(create_parsed.get("error", ""))
+            # If error is about missing blueprint inputs, our validation passed! HA rejected it.
+            if "Missing input" in error_msg or "input" in error_msg.lower():
+                logger.info(
+                    "✅ Our validation passed (config reached HA), HA rejected due to missing blueprint inputs as expected"
+                )
+                logger.info("✅ Blueprint script lifecycle test completed (validation works)")
+                return
+            # If error is about missing sequence, our fix didn't work
+            if "sequence" in error_msg.lower():
+                raise AssertionError(
+                    f"Our validation failed - still requiring sequence: {error_msg}"
+                )
+            # Some other error
+            raise AssertionError(f"Unexpected error: {create_parsed}")
+
+        # If it succeeded, great! (unlikely with empty inputs)
+        script_id = "test_blueprint_script_e2e"
+        script_entity = f"script.{script_id}"
+        cleanup_tracker.track("script", script_entity)
+        logger.info(f"✅ Created blueprint script: {script_id}")
+
+        # Step 4: Wait for script to be registered, then verify no sequence field
+        time.sleep(wait_for_script_registration())
+        get_result = await mcp.call_tool_success(
+            "ha_config_get_script",
+            {"script_id": script_id},
+        )
+
+        config = get_result.get("config", {})
+        assert "use_blueprint" in config, "Config should have use_blueprint"
+        logger.info("✅ Blueprint script config verified")
+
+        logger.info("✅ Blueprint script lifecycle test completed")
+
+
+@pytest.mark.e2e
+@pytest.mark.asyncio
+async def test_blueprint_script_with_empty_sequence(
+    mcp_client, cleanup_tracker, script_blueprint_path
+):
+    """
+    Test: Blueprint script with empty sequence array gets cleaned
+
+    Validates that if a user mistakenly provides empty sequence array with
+    a blueprint script, it is stripped before saving (issue #466).
+    """
+    logger.info("Testing blueprint script with empty sequence array...")
+
+    async with MCPAssertions(mcp_client) as mcp:
+        # Use the blueprint path from fixture
+        blueprint_path = script_blueprint_path
+
+        # Create blueprint script WITH empty sequence (should be stripped)
+        script_config = {
+            "alias": "Test Blueprint Empty Sequence E2E",
+            "use_blueprint": {
+                "path": blueprint_path,
+                "input": {},
+            },
+            "sequence": [],  # This should be stripped
+        }
+
+        # The key test: This should pass our validation (not fail with "missing sequence")
+        # It will fail HA validation due to missing blueprint inputs, but that's expected
+        create_result = await mcp_client.call_tool(
+            "ha_config_set_script",
+            {"script_id": "test_blueprint_empty_seq_e2e", "config": script_config},
+        )
+        create_parsed = enhanced_parse_mcp_result(create_result)
+
+        # If our validation works, it should reach HA (which will reject due to missing inputs)
+        if not create_parsed.get("success"):
+            error_msg = str(create_parsed.get("error", ""))
+            # If error is about missing blueprint inputs, our validation passed!
+            if "Missing input" in error_msg or "input" in error_msg.lower():
+                logger.info(
+                    "✅ Empty sequence was stripped (passed our validation, failed HA blueprint validation as expected)"
+                )
+                logger.info("✅ Empty sequence test completed")
+                return
+            # If error is about sequence, our fix didn't work
+            if "sequence" in error_msg.lower():
+                raise AssertionError(
+                    f"Empty sequence not stripped - validation failed: {error_msg}"
+                )
+            # Some other error
+            raise AssertionError(f"Unexpected error: {create_parsed}")
+
+        # If somehow it succeeded (unlikely with empty inputs)
+        script_id = "test_blueprint_empty_seq_e2e"
+        script_entity = f"script.{script_id}"
+        cleanup_tracker.track("script", script_entity)
+        logger.info(f"✅ Created blueprint script with empty sequence: {script_id}")
+
+        logger.info("✅ Empty sequence test completed")
+
+
+@pytest.mark.e2e
+@pytest.mark.asyncio
+async def test_regular_script_still_requires_sequence(mcp_client):
+    """
+    Test: Regular scripts still require sequence field
+
+    Validates that non-blueprint scripts still require sequence field (issue #466).
+    """
+    logger.info("Testing that regular scripts still require sequence...")
+
+    async with MCPAssertions(mcp_client) as mcp:
+        # Try to create a script without sequence or use_blueprint
+        script_config = {
+            "alias": "Test Regular Script No Sequence",
+            # Missing both sequence and use_blueprint
+        }
+
+        result = await mcp.call_tool_failure(
+            "ha_config_set_script",
+            {"script_id": "test_regular_no_seq", "config": script_config},
+            expected_error="either 'sequence'",
+        )
+
+        assert "required_fields" in result
+        logger.info("✅ Regular script properly requires sequence or use_blueprint")
+        logger.info("✅ Regular script validation test completed")

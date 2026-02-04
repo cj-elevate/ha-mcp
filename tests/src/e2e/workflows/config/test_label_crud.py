@@ -7,7 +7,6 @@ Tests the complete lifecycle of labels including:
 - Label properties (color, icon, description)
 """
 
-import asyncio
 import logging
 
 import pytest
@@ -24,10 +23,10 @@ class TestLabelCRUD:
 
     async def test_list_labels(self, mcp_client):
         """Test listing all labels."""
-        logger.info("Testing ha_config_list_labels")
+        logger.info("Testing ha_config_get_label")
 
         result = await mcp_client.call_tool(
-            "ha_config_list_labels",
+            "ha_config_get_label",
             {},
         )
 
@@ -64,9 +63,7 @@ class TestLabelCRUD:
         cleanup_tracker.track("label", label_id)
         logger.info(f"Created label: {label_name} (id: {label_id})")
 
-        await asyncio.sleep(0.5)  # Wait for registration
-
-        # GET specific label
+        # GET specific label (config operations are synchronous)
         get_result = await mcp_client.call_tool(
             "ha_config_get_label",
             {"label_id": label_id},
@@ -90,8 +87,7 @@ class TestLabelCRUD:
         update_data = assert_mcp_success(update_result, "Update label")
         logger.info(f"Updated label: {update_data.get('message')}")
 
-        # VERIFY UPDATE via get
-        await asyncio.sleep(0.5)
+        # VERIFY UPDATE via get (config operations are synchronous)
         get_result = await mcp_client.call_tool(
             "ha_config_get_label",
             {"label_id": label_id},
@@ -110,8 +106,7 @@ class TestLabelCRUD:
         delete_data = assert_mcp_success(delete_result, "Delete label")
         logger.info(f"Deleted label: {delete_data.get('message')}")
 
-        # VERIFY DELETION
-        await asyncio.sleep(0.5)
+        # VERIFY DELETION (config operations are synchronous)
         get_result = await mcp_client.call_tool(
             "ha_config_get_label",
             {"label_id": label_id},
@@ -259,13 +254,13 @@ class TestLabelAssignment:
         cleanup_tracker.track("label", label_id)
         logger.info(f"Created label for assignment: {label_id}")
 
-        await asyncio.sleep(0.5)
 
         # Assign label to entity
         assign_result = await mcp_client.call_tool(
-            "ha_assign_label",
+            "ha_manage_entity_labels",
             {
                 "entity_id": test_light_entity,
+                "operation": "set",
                 "labels": [label_id],
             },
         )
@@ -274,9 +269,10 @@ class TestLabelAssignment:
 
         # Clear labels from entity (restore original state)
         clear_result = await mcp_client.call_tool(
-            "ha_assign_label",
+            "ha_manage_entity_labels",
             {
                 "entity_id": test_light_entity,
+                "operation": "set",
                 "labels": [],  # Clear all labels
             },
         )
@@ -308,13 +304,13 @@ class TestLabelAssignment:
             cleanup_tracker.track("label", label_id)
         logger.info(f"Created labels: {label_ids}")
 
-        await asyncio.sleep(0.5)
 
         # Assign both labels
         assign_result = await mcp_client.call_tool(
-            "ha_assign_label",
+            "ha_manage_entity_labels",
             {
                 "entity_id": test_light_entity,
+                "operation": "set",
                 "labels": label_ids,
             },
         )
@@ -323,9 +319,10 @@ class TestLabelAssignment:
 
         # Clear labels from entity
         await mcp_client.call_tool(
-            "ha_assign_label",
+            "ha_manage_entity_labels",
             {
                 "entity_id": test_light_entity,
+                "operation": "set",
                 "labels": [],
             },
         )
@@ -352,13 +349,13 @@ class TestLabelAssignment:
         label_id = create_data.get("label_id")
         cleanup_tracker.track("label", label_id)
 
-        await asyncio.sleep(0.5)
 
         # Assign using string instead of list
         assign_result = await mcp_client.call_tool(
-            "ha_assign_label",
+            "ha_manage_entity_labels",
             {
                 "entity_id": test_light_entity,
+                "operation": "set",
                 "labels": label_id,  # String instead of list
             },
         )
@@ -367,9 +364,10 @@ class TestLabelAssignment:
 
         # Clear labels
         await mcp_client.call_tool(
-            "ha_assign_label",
+            "ha_manage_entity_labels",
             {
                 "entity_id": test_light_entity,
+                "operation": "set",
                 "labels": [],
             },
         )
@@ -395,13 +393,13 @@ class TestLabelAssignment:
         label_id = create_data.get("label_id")
         cleanup_tracker.track("label", label_id)
 
-        await asyncio.sleep(0.5)
 
         # Assign using JSON array string
         assign_result = await mcp_client.call_tool(
-            "ha_assign_label",
+            "ha_manage_entity_labels",
             {
                 "entity_id": test_light_entity,
+                "operation": "set",
                 "labels": f'["{label_id}"]',  # JSON array string
             },
         )
@@ -410,9 +408,10 @@ class TestLabelAssignment:
 
         # Clear labels
         await mcp_client.call_tool(
-            "ha_assign_label",
+            "ha_manage_entity_labels",
             {
                 "entity_id": test_light_entity,
+                "operation": "set",
                 "labels": [],
             },
         )
@@ -436,13 +435,13 @@ class TestLabelAssignment:
         label_id = create_data.get("label_id")
         cleanup_tracker.track("label", label_id)
 
-        await asyncio.sleep(0.5)
 
         # Try to assign to non-existent entity
         assign_result = await mcp_client.call_tool(
-            "ha_assign_label",
+            "ha_manage_entity_labels",
             {
                 "entity_id": "light.nonexistent_xyz_12345",
+                "operation": "set",
                 "labels": [label_id],
             },
         )
@@ -487,9 +486,8 @@ async def test_multiple_labels_lifecycle(mcp_client, cleanup_tracker):
         logger.info(f"Created: {config['name']} (id: {label_id})")
 
     # List and verify all exist
-    await asyncio.sleep(0.5)
     list_result = await mcp_client.call_tool(
-        "ha_config_list_labels",
+        "ha_config_get_label",
         {},
     )
     list_data = assert_mcp_success(list_result, "List labels")
@@ -505,13 +503,11 @@ async def test_multiple_labels_lifecycle(mcp_client, cleanup_tracker):
             "ha_config_remove_label",
             {"label_id": label_id},
         )
-        await asyncio.sleep(0.2)
     logger.info("All labels deleted")
 
     # Verify deletions
-    await asyncio.sleep(0.5)
     list_result = await mcp_client.call_tool(
-        "ha_config_list_labels",
+        "ha_config_get_label",
         {},
     )
     list_data = assert_mcp_success(list_result, "List after deletion")

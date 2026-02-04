@@ -116,32 +116,44 @@ For secure remote access without port forwarding, use the **Cloudflared add-on**
 
 #### Configure Cloudflared
 
+**Note:** The Cloudflared add-on requires a Cloudflare account and uses named tunnels. You'll need to authenticate via the browser flow when first setting up the tunnel.
+
 Add to Cloudflared add-on configuration:
 
 ```yaml
 additional_hosts:
-  - hostname: ha-mcp  # Quick tunnel mode (generates temporary URL)
+  - hostname: ha-mcp  # Named tunnel (requires Cloudflare account)
     service: http://localhost:9583
 ```
 
-Or with a custom domain:
+Or with a custom domain (requires DNS setup in Cloudflare):
 ```yaml
 additional_hosts:
   - hostname: ha-mcp.yourdomain.com
     service: http://localhost:9583
 ```
 
-#### Get Your Public URL
+#### Authenticate and Get Your Public URL
 
-After starting Cloudflared, check its logs for your tunnel URL:
-- Quick tunnel: `https://random-name.trycloudflare.com`
-- Custom domain: `https://ha-mcp.yourdomain.com`
+When you first start Cloudflared:
+
+1. **Check the add-on logs** for an authentication URL like:
+   ```
+   Please open the following URL and log in with your Cloudflare account:
+   https://xyz.cloudflare.com/argotunnel?...
+   ```
+
+2. **Open the URL in your browser**, log in with your Cloudflare account, and select a website to authorize the tunnel
+
+3. **After authentication**, the logs will show your tunnel URL:
+   - Named tunnel: `https://ha-mcp-<random>.cfargotunnel.com`
+   - Custom domain: `https://ha-mcp.yourdomain.com` (if DNS configured)
 
 #### Use Your MCP Server
 
 Combine the Cloudflare tunnel URL with your secret path:
 ```
-https://random-name.trycloudflare.com/private_zctpwlX7ZkIAr7oqdfLPxw
+https://ha-mcp-<random>.cfargotunnel.com/private_zctpwlX7ZkIAr7oqdfLPxw
 ```
 
 **Benefits:**
@@ -149,6 +161,8 @@ https://random-name.trycloudflare.com/private_zctpwlX7ZkIAr7oqdfLPxw
 - Automatic HTTPS encryption
 - Optional Cloudflare Zero Trust authentication
 - Centrally managed with other Home Assistant services
+
+**Note on Quick Tunnels:** True Quick Tunnel mode (temporary `*.trycloudflare.com` URLs without account) requires running `cloudflared tunnel --url http://localhost:9583` directly via CLI or Docker, which is not supported by this add-on. The Home Assistant Cloudflared add-on uses named tunnels that require a Cloudflare account for authentication and management.
 
 See [Cloudflared add-on documentation](https://github.com/brenner-tobias/addon-cloudflared/blob/main/cloudflared/DOCS.md) for advanced configuration.
 
@@ -283,19 +297,19 @@ The add-on provides 80+ MCP tools for controlling Home Assistant:
 - **Scripts**: `ha_config_get_script`, `ha_config_set_script`, `ha_config_remove_script`
 - **Automations**: `ha_config_get_automation`, `ha_config_set_automation`, `ha_config_remove_automation`
 - **Groups**: `ha_config_list_groups`, `ha_config_set_group`, `ha_config_remove_group`
-- **Dashboards**: `ha_config_list_dashboards`, `ha_config_get_dashboard`, `ha_config_set_dashboard`, `ha_config_delete_dashboard`
+- **Dashboards**: `ha_config_get_dashboard`, `ha_config_set_dashboard`, `ha_config_delete_dashboard`
 - **Areas & Floors**: `ha_config_list_areas`, `ha_config_set_area`, `ha_config_remove_area`, `ha_config_list_floors`, `ha_config_set_floor`, `ha_config_remove_floor`
-- **Labels**: `ha_config_list_labels`, `ha_config_set_label`, `ha_config_remove_label`, `ha_assign_label`
-- **Zones**: `ha_list_zones`, `ha_create_zone`, `ha_update_zone`, `ha_delete_zone`
+- **Labels**: `ha_config_get_label`, `ha_config_set_label`, `ha_config_remove_label`, `ha_manage_entity_labels`
+- **Zones**: `ha_get_zone`, `ha_create_zone`, `ha_update_zone`, `ha_delete_zone`
 
 ### Todo & Calendar
-- **Todo Lists**: `ha_list_todo_lists`, `ha_get_todo_items`, `ha_add_todo_item`, `ha_update_todo_item`, `ha_remove_todo_item`
+- **Todo Lists**: `ha_get_todo`, `ha_add_todo_item`, `ha_update_todo_item`, `ha_remove_todo_item`
 - **Calendar**: `ha_config_get_calendar_events`, `ha_config_set_calendar_event`, `ha_config_remove_calendar_event`
 
 ### Device Control
 - `ha_bulk_control` - Multi-device control with verification
 - `ha_get_operation_status` - Check operation status
-- `ha_list_devices`, `ha_get_device`, `ha_update_device`, `ha_remove_device`
+- `ha_get_device`, `ha_update_device`, `ha_remove_device`
 - `ha_rename_entity` - Rename entity ID
 
 ### History & Monitoring
@@ -309,13 +323,12 @@ The add-on provides 80+ MCP tools for controlling Home Assistant:
 - `ha_get_entity_integration_source` - Get integration source for any entity
 
 ### Add-ons (Supervisor only)
-- `ha_list_addons` - List installed add-ons
-- `ha_list_available_addons` - List available add-ons from repositories
+- `ha_get_addon` - List installed or available add-ons (source="installed" or "available")
 
 ### System & Updates
 - `ha_check_config`, `ha_restart`, `ha_reload_core`
 - `ha_get_system_info`, `ha_get_system_health`
-- `ha_list_updates`, `ha_get_release_notes`, `ha_get_system_version`
+- `ha_get_updates` - List updates or get details for a specific update entity
 
 ### Blueprints
 - `ha_list_blueprints`, `ha_get_blueprint`, `ha_import_blueprint`
@@ -328,7 +341,7 @@ The add-on provides 80+ MCP tools for controlling Home Assistant:
 - `ha_get_logbook` - Historical events
 - `ha_eval_template` - Evaluate Jinja2 templates
 - `ha_get_domain_docs` - Domain documentation
-- `ha_list_integrations` - List installed integrations
+- `ha_get_integration` - List or get integration info
 
 See the [main repository](https://github.com/homeassistant-ai/ha-mcp) for detailed tool documentation and examples.
 

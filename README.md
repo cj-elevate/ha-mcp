@@ -1,10 +1,3 @@
----
-type: doc
-doc: readme
-updated: 2026-01-03
-project: ha-mcp-extended
-area: servers
----
 <div align="center">
   <img src="docs/img/ha-mcp-logo.png" alt="Home Assistant MCP Server Logo" width="300"/>
 
@@ -13,7 +6,7 @@ area: servers
   <!-- mcp-name: io.github.homeassistant-ai/ha-mcp -->
 
   <p align="center">
-    <img src="https://img.shields.io/badge/tools-80+-blue" alt="80+ Tools">
+    <img src="https://img.shields.io/badge/tools-95+-blue" alt="95+ Tools">
     <a href="https://github.com/homeassistant-ai/ha-mcp/releases"><img src="https://img.shields.io/github/v/release/homeassistant-ai/ha-mcp" alt="Release"></a>
     <a href="https://github.com/homeassistant-ai/ha-mcp/actions/workflows/e2e-tests.yml"><img src="https://img.shields.io/github/actions/workflow/status/homeassistant-ai/ha-mcp/e2e-tests.yml?branch=master&label=E2E%20Tests" alt="E2E Tests"></a>
     <a href="LICENSE.md"><img src="https://img.shields.io/github/license/homeassistant-ai/ha-mcp.svg" alt="License"></a>
@@ -21,6 +14,7 @@ area: servers
     <a href="https://github.com/homeassistant-ai/ha-mcp/commits/master"><img src="https://img.shields.io/github/commit-activity/m/homeassistant-ai/ha-mcp.svg" alt="Activity"></a>
     <a href="https://github.com/jlowin/fastmcp"><img src="https://img.shields.io/badge/Built%20with-FastMCP-purple" alt="Built with FastMCP"></a>
     <img src="https://img.shields.io/python/required-version-toml?tomlFilePath=https%3A%2F%2Fraw.githubusercontent.com%2Fhomeassistant-ai%2Fha-mcp%2Fmaster%2Fpyproject.toml" alt="Python Version">
+    <a href="https://github.com/sponsors/julienld"><img src="https://img.shields.io/badge/GitHub_Sponsors-☕-blueviolet" alt="GitHub Sponsors"></a>
   </p>
 
   <p align="center">
@@ -116,7 +110,7 @@ Spend less time configuring, more time enjoying your smart home.
 | **💾 System** | Backup/restore, updates, add-ons, device registry |
 
 <details>
-<summary><b>🛠️ Complete Tool List (82 tools)</b></summary>
+<summary><b>🛠️ Complete Tool List (97 tools)</b></summary>
 
 | Category | Tools |
 |----------|-------|
@@ -125,64 +119,41 @@ Spend less time configuring, more time enjoying your smart home.
 | **Automations** | `ha_config_get_automation`, `ha_config_set_automation`, `ha_config_remove_automation` |
 | **Scripts** | `ha_config_get_script`, `ha_config_set_script`, `ha_config_remove_script` |
 | **Helper Entities** | `ha_config_list_helpers`, `ha_config_set_helper`, `ha_config_remove_helper` |
-| **Dashboards** | `ha_config_list_dashboards`, `ha_config_get_dashboard`, `ha_config_set_dashboard`, `ha_config_update_dashboard_metadata`, `ha_config_delete_dashboard`, `ha_get_dashboard_guide`, `ha_get_card_types`, `ha_get_card_documentation` |
+| **Dashboards** | `ha_config_get_dashboard`, `ha_config_set_dashboard`, `ha_config_update_dashboard_metadata`, `ha_config_delete_dashboard`, `ha_get_dashboard_guide`, `ha_get_card_types`, `ha_get_card_documentation` |
 | **Areas & Floors** | `ha_config_list_areas`, `ha_config_set_area`, `ha_config_remove_area`, `ha_config_list_floors`, `ha_config_set_floor`, `ha_config_remove_floor` |
-| **Labels** | `ha_config_list_labels`, `ha_config_get_label`, `ha_config_set_label`, `ha_config_remove_label`, `ha_assign_label` |
-| **Zones** | `ha_list_zones`, `ha_create_zone`, `ha_update_zone`, `ha_delete_zone` |
+| **Labels** | `ha_config_get_label`, `ha_config_set_label`, `ha_config_remove_label`, `ha_manage_entity_labels` |
+| **Zones** | `ha_get_zone`, `ha_create_zone`, `ha_update_zone`, `ha_delete_zone` |
 | **Groups** | `ha_config_list_groups`, `ha_config_set_group`, `ha_config_remove_group` |
-| **Todo Lists** | `ha_list_todo_lists`, `ha_get_todo_items`, `ha_add_todo_item`, `ha_update_todo_item`, `ha_remove_todo_item` |
+| **Todo Lists** | `ha_get_todo`, `ha_add_todo_item`, `ha_update_todo_item`, `ha_remove_todo_item` |
 | **Calendar** | `ha_config_get_calendar_events`, `ha_config_set_calendar_event`, `ha_config_remove_calendar_event` |
 | **Blueprints** | `ha_list_blueprints`, `ha_get_blueprint`, `ha_import_blueprint` |
-| **Device Registry** | `ha_list_devices`, `ha_get_device`, `ha_update_device`, `ha_remove_device`, `ha_rename_entity` |
+| **Device Registry** | `ha_get_device`, `ha_update_device`, `ha_remove_device`, `ha_rename_entity` |
 | **ZHA & Integrations** | `ha_get_zha_devices`, `ha_get_entity_integration_source` |
-| **Add-ons** | `ha_list_addons`, `ha_list_available_addons` |
+| **Add-ons** | `ha_get_addon` |
 | **Camera** | `ha_get_camera_image` |
 | **History & Statistics** | `ha_get_history`, `ha_get_statistics` |
 | **Automation Traces** | `ha_get_automation_traces` |
-| **System & Updates** | `ha_check_config`, `ha_restart`, `ha_reload_core`, `ha_get_system_info`, `ha_get_system_health`, `ha_list_updates`, `ha_get_release_notes`, `ha_get_system_version` |
+| **System & Updates** | `ha_check_config`, `ha_restart`, `ha_reload_core`, `ha_get_system_info`, `ha_get_system_health`, `ha_get_updates` |
 | **Backup & Restore** | `ha_backup_create`, `ha_backup_restore` |
-| **Utility** | `ha_get_logbook`, `ha_eval_template`, `ha_get_domain_docs`, `ha_list_integrations` |
+| **Utility** | `ha_get_logbook`, `ha_eval_template`, `ha_get_domain_docs`, `ha_get_integration` |
 
 </details>
 
 ---
 
-## 🔐 Platform Authentication Notes
+## 🧠 Better Results with Agent Skills
 
-This platform uses **two MCP servers** for Home Assistant access:
+This server gives your AI agent tools to control Home Assistant. For better configurations, pair it with [Home Assistant Agent Skills](https://github.com/homeassistant-ai/skills) — domain knowledge that teaches the agent Home Assistant best practices.
 
-### ha-mcp-extended (this server)
-- **Purpose:** 101 tools for HA Core API operations (entities, services, automations, etc.)
-- **Authentication:** Long-Lived Access Token (configured in `.env`)
-- **Usage:** Direct tool calls like `ha_get_state`, `ha_call_service`, `ha_config_set_automation`
+An MCP server can create automations, helpers, and dashboards, but it has no opinion on *how* to structure them. Without domain knowledge, agents tend to over-rely on templates, pick the wrong helper type, or produce automations that are hard to maintain. The skills fill that gap: native constructs over Jinja2 workarounds, correct helper selection, safe refactoring workflows, and proper use of automation modes.
 
-### ssh-ha MCP server
-- **Purpose:** Shell command execution for custom operations not in ha-mcp
-- **Authentication:** SSH key + API tokens via wrapper scripts
-- **Usage:** Commands via `ssh-ha.exec` or `ssh-ha.sudo-exec`
+---
 
-### Helper Scripts on HA Server
+## 🧪 Dev Channel
 
-Two wrapper scripts are provided at `/root/scripts/` for correct API access:
+Want early access to new features and fixes? Dev releases (`.devN`) are published on every push to master.
 
-**For Home Assistant Core API (entities, services):**
-```bash
-/root/scripts/ha-core-curl /api/services
-/root/scripts/ha-core-curl /api/states/sun.sun
-```
-
-**For Supervisor API (add-ons, backups, host info):**
-```bash
-/root/scripts/ha-supervisor-curl /info
-/root/scripts/ha-supervisor-curl /backups
-```
-
-### Quick Reference
-
-| Need | API | Base URL | Token Source |
-|------|-----|----------|---------------|
-| Entities, services, states | **Core API** | `http://192.168.1.3:8123/api` | `$HA_TOKEN` from `/homeassistant/.ha_api_token` |
-| Add-ons, backups, host | **Supervisor API** | `http://supervisor` | `$SUPERVISOR_TOKEN` environment variable |
+**[Dev Channel Documentation](docs/dev-channel.md)** — Instructions for pip/uvx, Docker, and Home Assistant add-on.
 
 ---
 
@@ -223,4 +194,22 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - **[@julienld](https://github.com/julienld)** — Project maintainer & core contributor.
 - **[@kingbear2](https://github.com/kingbear2)** — Windows UV setup guide.
-- **[@sergeykad](https://github.com/sergeykad)** — Dashboard card-level CRUD operations.
+- **[@sergeykad](https://github.com/sergeykad)** — Dashboard card-level CRUD operations, better changelogs and removed the dependency to textdistance/numpy.
+- **[@konradwalsh](https://github.com/konradwalsh)** — Financial support via [GitHub Sponsors](https://github.com/sponsors/julienld). Thank you! ☕
+- **[@cj-elevate](https://github.com/cj-elevate)** — Integration & entity management tools (enable/disable/delete).
+- **[@kingpanther13](https://github.com/kingpanther13)** — Dev channel documentation, bulk control validation, OAuth 2.1 docs, tool consolidation, error handling improvements, and native solutions guidance.
+- **[@Danm72](https://github.com/Danm72)** — Entity registry tools (`ha_set_entity`, `ha_get_entity`) for managing entity properties.
+- **[@Raygooo](https://github.com/Raygooo)** — SOCKS proxy support.
+
+---
+
+## 💬 Community
+
+- **[GitHub Discussions](https://github.com/homeassistant-ai/ha-mcp/discussions)** — Ask questions, share ideas
+- **[Issue Tracker](https://github.com/homeassistant-ai/ha-mcp/issues)** — Report bugs, request features, or suggest tool behavior improvements
+
+---
+
+## ⭐ Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=homeassistant-ai/ha-mcp&type=Date)](https://star-history.com/#homeassistant-ai/ha-mcp&Date)

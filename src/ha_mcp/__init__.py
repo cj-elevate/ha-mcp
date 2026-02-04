@@ -5,10 +5,11 @@ A Model Context Protocol server that provides complete control over Home Assista
 through REST API and WebSocket integration with 20+ enhanced tools.
 """
 
-__version__ = "5.0.6"
+__version__ = "6.5.0"
 __author__ = "Julien"
 __license__ = "MIT"
 
+from .auth import HomeAssistantOAuthProvider
 from .client.rest_client import HomeAssistantClient
 from .config import Settings
 from .errors import (
@@ -32,6 +33,7 @@ __all__ = [
     "Settings",
     "HomeAssistantClient",
     "HomeAssistantSmartMCPServer",
+    "HomeAssistantOAuthProvider",
     # Error handling exports
     "ErrorCode",
     "create_error_response",

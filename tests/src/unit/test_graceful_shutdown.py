@@ -187,7 +187,7 @@ class TestGracefulShutdownIntegration:
         # Create a mock MCP that runs forever
         mock_mcp = MagicMock()
 
-        async def mock_run_async():
+        async def mock_run_async(show_banner=True):
             await asyncio.sleep(100)  # Simulate long-running server
 
         mock_mcp.run_async = mock_run_async
@@ -229,7 +229,7 @@ class TestGracefulShutdownIntegration:
 
         mock_mcp = MagicMock()
 
-        async def mock_run_async():
+        async def mock_run_async(show_banner=True):
             await asyncio.sleep(100)
 
         mock_mcp.run_async = mock_run_async
@@ -253,6 +253,116 @@ class TestGracefulShutdownIntegration:
 
                 # Verify cleanup was called
                 assert cleanup_called.is_set(), "Cleanup was not called"
+
+
+class TestStdinDetection:
+    """Tests for stdin availability detection (Docker without -i flag)."""
+
+    def test_stdin_available_when_tty(self):
+        """Stdin should be available when connected to a tty."""
+        from ha_mcp.__main__ import _check_stdin_available
+        import stat as stat_module
+
+        with patch("sys.stdin") as mock_stdin:
+            mock_stdin.closed = False
+            mock_stdin.fileno.return_value = 0
+
+            with patch("os.fstat") as mock_fstat:
+                mock_fstat.return_value = MagicMock(st_mode=stat_module.S_IFCHR)
+
+                with patch("os.isatty", return_value=True):
+                    assert _check_stdin_available() is True
+
+    def test_stdin_available_when_pipe(self):
+        """Stdin should be available when connected to a pipe (FIFO)."""
+        from ha_mcp.__main__ import _check_stdin_available
+        import stat as stat_module
+
+        with patch("sys.stdin") as mock_stdin:
+            mock_stdin.closed = False
+            mock_stdin.fileno.return_value = 0
+
+            with patch("os.fstat") as mock_fstat:
+                mock_fstat.return_value = MagicMock(st_mode=stat_module.S_IFIFO)
+
+                with patch("os.isatty", return_value=False):
+                    assert _check_stdin_available() is True
+
+    def test_stdin_available_when_regular_file(self):
+        """Stdin should be available when connected to a regular file."""
+        from ha_mcp.__main__ import _check_stdin_available
+        import stat as stat_module
+
+        with patch("sys.stdin") as mock_stdin:
+            mock_stdin.closed = False
+            mock_stdin.fileno.return_value = 0
+
+            with patch("os.fstat") as mock_fstat:
+                mock_fstat.return_value = MagicMock(st_mode=stat_module.S_IFREG)
+
+                with patch("os.isatty", return_value=False):
+                    assert _check_stdin_available() is True
+
+    def test_stdin_not_available_when_closed(self):
+        """Stdin should not be available when closed."""
+        from ha_mcp.__main__ import _check_stdin_available
+
+        with patch("sys.stdin") as mock_stdin:
+            mock_stdin.closed = True
+            assert _check_stdin_available() is False
+
+    def test_stdin_not_available_when_none(self):
+        """Stdin should not be available when None."""
+        from ha_mcp.__main__ import _check_stdin_available
+
+        with patch("sys.stdin", None):
+            assert _check_stdin_available() is False
+
+    def test_stdin_not_available_when_char_device_not_tty(self):
+        """Stdin should not be available when char device but not tty (like /dev/null)."""
+        from ha_mcp.__main__ import _check_stdin_available
+        import stat as stat_module
+
+        with patch("sys.stdin") as mock_stdin:
+            mock_stdin.closed = False
+            mock_stdin.fileno.return_value = 0
+
+            with patch("os.fstat") as mock_fstat:
+                mock_fstat.return_value = MagicMock(st_mode=stat_module.S_IFCHR)
+
+                with patch("os.isatty", return_value=False):
+                    assert _check_stdin_available() is False
+
+    def test_stdin_not_available_when_fileno_raises(self):
+        """Stdin should not be available when fileno() raises."""
+        from ha_mcp.__main__ import _check_stdin_available
+
+        with patch("sys.stdin") as mock_stdin:
+            mock_stdin.closed = False
+            mock_stdin.fileno.side_effect = ValueError("no fileno")
+            assert _check_stdin_available() is False
+
+    def test_stdin_not_available_when_fstat_raises(self):
+        """Stdin should not be available when fstat() raises."""
+        from ha_mcp.__main__ import _check_stdin_available
+
+        with patch("sys.stdin") as mock_stdin:
+            mock_stdin.closed = False
+            mock_stdin.fileno.return_value = 0
+
+            with patch("os.fstat", side_effect=OSError("fstat failed")):
+                assert _check_stdin_available() is False
+
+    def test_main_exits_when_stdin_not_available(self):
+        """Main should exit with error when stdin is not available."""
+        import ha_mcp.__main__ as main_module
+
+        with patch.object(sys, "argv", ["ha-mcp"]):
+            with patch.object(main_module, "_check_stdin_available", return_value=False):
+                with pytest.raises(SystemExit) as exc_info:
+                    main_module.main()
+
+                assert exc_info.value.code == 1
 
 
 class TestMainEntryPoint:
@@ -286,10 +396,11 @@ class TestMainEntryPoint:
         main_module._shutdown_in_progress = False
         main_module._shutdown_event = None
 
-        with patch.object(main_module, "_setup_signal_handlers", side_effect=mock_setup):
-            with patch.object(main_module, "_run_with_graceful_shutdown", new_callable=AsyncMock):
-                with pytest.raises(SystemExit):
-                    main_module.main()
+        with patch.object(main_module, "_check_stdin_available", return_value=True):
+            with patch.object(main_module, "_setup_signal_handlers", side_effect=mock_setup):
+                with patch.object(main_module, "_run_with_graceful_shutdown", new_callable=AsyncMock):
+                    with pytest.raises(SystemExit):
+                        main_module.main()
 
         assert setup_called, "Signal handlers were not set up"
 
@@ -303,7 +414,7 @@ class TestHTTPEntryPoints:
 
         transport_used = None
 
-        def mock_run_http(transport):
+        def mock_run_http(transport, default_port=8086):
             nonlocal transport_used
             transport_used = transport
             raise SystemExit(0)
@@ -312,9 +423,14 @@ class TestHTTPEntryPoints:
         main_module._shutdown_in_progress = False
         main_module._shutdown_event = None
 
-        with patch.object(main_module, "_run_http_server", side_effect=mock_run_http):
-            with pytest.raises(SystemExit):
-                main_module.main_web()
+        # Provide credentials to pass validation
+        with patch.dict(os.environ, {
+            "HOMEASSISTANT_URL": "http://test.local:8123",
+            "HOMEASSISTANT_TOKEN": "test_token"
+        }):
+            with patch.object(main_module, "_run_http_server", side_effect=mock_run_http):
+                with pytest.raises(SystemExit):
+                    main_module.main_web()
 
         assert transport_used == "streamable-http"
 
@@ -324,7 +440,7 @@ class TestHTTPEntryPoints:
 
         transport_used = None
 
-        def mock_run_http(transport):
+        def mock_run_http(transport, default_port=8087):
             nonlocal transport_used
             transport_used = transport
             raise SystemExit(0)
@@ -333,9 +449,14 @@ class TestHTTPEntryPoints:
         main_module._shutdown_in_progress = False
         main_module._shutdown_event = None
 
-        with patch.object(main_module, "_run_http_server", side_effect=mock_run_http):
-            with pytest.raises(SystemExit):
-                main_module.main_sse()
+        # Provide credentials to pass validation
+        with patch.dict(os.environ, {
+            "HOMEASSISTANT_URL": "http://test.local:8123",
+            "HOMEASSISTANT_TOKEN": "test_token"
+        }):
+            with patch.object(main_module, "_run_http_server", side_effect=mock_run_http):
+                with pytest.raises(SystemExit):
+                    main_module.main_sse()
 
         assert transport_used == "sse"
 

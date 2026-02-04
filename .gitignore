@@ -79,6 +79,8 @@ archive/
 docs/review/
 docs/development/
 .local/
+local/
+worktree/
 /.claude/settings.local.json
 fastmcp/
 
