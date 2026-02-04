@@ -1,15 +1,19 @@
 ---
+type: note
+updated: 2026-01-03
+area: servers
+project: ha-mcp-extended
 name: Zed
 company: Zed Industries
 logo: /logos/zed.svg
-transports: ['stdio']
+transports:
+  - stdio
 configFormat: json
 configLocation: ~/.config/zed/settings.json
 accuracy: 4
 order: 10
 httpNote: stdio only - limited HTTP support
 ---
-
 ## Configuration
 
 Zed uses a `context_servers` key in its settings (different from most clients).

@@ -1,14 +1,20 @@
 ---
+type: note
+updated: 2026-01-03
+area: servers
+project: ha-mcp-extended
 name: Continue
 company: Continue.dev
 logo: /logos/continue.svg
-transports: ['stdio', 'sse', 'streamable-http']
+transports:
+  - stdio
+  - sse
+  - streamable-http
 configFormat: yaml
 configLocation: .continue/mcpServers/
 accuracy: 4
 order: 11
 ---
-
 ## Configuration
 
 Continue uses YAML or JSON configuration files with full transport support.

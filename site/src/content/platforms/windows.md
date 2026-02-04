@@ -1,9 +1,12 @@
 ---
+type: note
+updated: 2026-01-03
+area: servers
+project: ha-mcp-extended
 name: Windows
 icon: windows
 order: 3
 ---
-
 ## Install uv (Package Manager)
 
 uv is a fast Python package manager required to run ha-mcp.

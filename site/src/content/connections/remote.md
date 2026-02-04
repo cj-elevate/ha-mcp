@@ -1,11 +1,14 @@
 ---
+type: note
+updated: 2026-01-03
+area: servers
+project: ha-mcp-extended
 name: Remote (Internet)
 transport: https
 description: Access ha-mcp from anywhere via secure HTTPS
 icon: globe
 order: 3
 ---
-
 ## How It Works
 
 ha-mcp is exposed to the internet via a secure HTTPS tunnel or reverse proxy.

@@ -1,14 +1,18 @@
 ---
+type: note
+updated: 2026-01-03
+area: servers
+project: ha-mcp-extended
 name: Antigravity
 company: Google
 logo: /logos/google.svg
-transports: ['stdio']
+transports:
+  - stdio
 configFormat: json
 configLocation: mcp_config.json (in Antigravity UI)
 accuracy: 3
 order: 15
 ---
-
 ## Configuration
 
 Google Antigravity supports MCP servers via the built-in MCP Store and custom configuration.

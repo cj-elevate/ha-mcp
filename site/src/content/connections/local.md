@@ -1,11 +1,14 @@
 ---
+type: note
+updated: 2026-01-03
+area: servers
+project: ha-mcp-extended
 name: Local Machine
 transport: stdio
 description: Run ha-mcp on the same computer as your AI client
 icon: computer
 order: 1
 ---
-
 ## How It Works
 
 Your AI client (Claude Desktop, Cursor, etc.) spawns ha-mcp as a subprocess on your machine. Communication happens via stdin/stdout (stdio).

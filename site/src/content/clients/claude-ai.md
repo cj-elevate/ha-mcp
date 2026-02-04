@@ -1,14 +1,19 @@
 ---
+type: note
+updated: 2026-01-03
+area: servers
+project: ha-mcp-extended
 name: Claude.ai
 company: Anthropic
 logo: /logos/anthropic.svg
-transports: ['sse', 'streamable-http']
+transports:
+  - sse
+  - streamable-http
 configFormat: ui
 accuracy: 4
 order: 8
 httpNote: Requires HTTPS - Remote deployment required
 ---
-
 ## Configuration
 
 Claude.ai (web interface) supports MCP servers via the Connectors feature.

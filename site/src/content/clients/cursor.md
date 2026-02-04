@@ -1,14 +1,20 @@
 ---
+type: note
+updated: 2026-01-03
+area: servers
+project: ha-mcp-extended
 name: Cursor
 company: Anysphere
 logo: /logos/cursor.svg
-transports: ['stdio', 'sse', 'streamable-http']
+transports:
+  - stdio
+  - sse
+  - streamable-http
 configFormat: json
 configLocation: Settings → Cursor Settings → MCP
 accuracy: 5
 order: 3
 ---
-
 ## Configuration
 
 Cursor uses JSON configuration via Settings → Cursor Settings → MCP. Supports stdio, SSE, and streamable HTTP transports.

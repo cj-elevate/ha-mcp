@@ -1,14 +1,19 @@
 ---
+type: note
+updated: 2026-01-03
+area: servers
+project: ha-mcp-extended
 name: ChatGPT
 company: OpenAI
 logo: /logos/openai.svg
-transports: ['sse', 'streamable-http']
+transports:
+  - sse
+  - streamable-http
 configFormat: ui
 accuracy: 4
 order: 7
 beta: true
 ---
-
 ## Configuration
 
 ChatGPT supports MCP servers via the Connectors feature (web UI only).

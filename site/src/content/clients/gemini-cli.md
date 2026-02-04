@@ -1,14 +1,20 @@
 ---
+type: note
+updated: 2026-01-03
+area: servers
+project: ha-mcp-extended
 name: Gemini CLI
 company: Google
 logo: /logos/google.svg
-transports: ['stdio', 'sse', 'streamable-http']
+transports:
+  - stdio
+  - sse
+  - streamable-http
 configFormat: cli
 configLocation: ~/.gemini/settings.json
 accuracy: 4
 order: 8
 ---
-
 ## Configuration
 
 Gemini CLI supports MCP servers via JSON configuration with full transport support.

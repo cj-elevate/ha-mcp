@@ -1,13 +1,19 @@
 ---
+type: note
+updated: 2026-01-03
+area: servers
+project: ha-mcp-extended
 name: Claude Code
 company: Anthropic
 logo: /logos/anthropic.svg
-transports: ['stdio', 'sse', 'streamable-http']
+transports:
+  - stdio
+  - sse
+  - streamable-http
 configFormat: cli
 accuracy: 5
 order: 2
 ---
-
 ## Configuration
 
 Claude Code uses CLI commands to add MCP servers. Supports stdio, SSE, and streamable HTTP transports natively.

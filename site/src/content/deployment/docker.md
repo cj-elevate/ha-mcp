@@ -1,11 +1,16 @@
 ---
+type: note
+updated: 2026-01-03
+area: servers
+project: ha-mcp-extended
 name: Docker
 description: Run ha-mcp in a container
 icon: docker
-forConnections: ['local', 'network']
+forConnections:
+  - local
+  - network
 order: 2
 ---
-
 ## For Local Machine (stdio)
 
 Use Docker in your AI client config:

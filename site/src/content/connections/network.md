@@ -1,11 +1,14 @@
 ---
+type: note
+updated: 2026-01-03
+area: servers
+project: ha-mcp-extended
 name: Local Network
 transport: http
 description: Run ha-mcp as an HTTP server accessible on your LAN
 icon: network
 order: 2
 ---
-
 ## How It Works
 
 ha-mcp runs as a persistent HTTP server on your network. AI clients connect to it via HTTP URL.

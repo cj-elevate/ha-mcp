@@ -1,9 +1,12 @@
 ---
+type: note
+updated: 2026-01-03
+area: servers
+project: ha-mcp-extended
 name: Docker
 icon: docker
 order: 4
 ---
-
 ## Requirements
 
 Docker or Docker Desktop must be installed and running.

@@ -1,14 +1,19 @@
 ---
+type: note
+updated: 2026-01-03
+area: servers
+project: ha-mcp-extended
 name: Cline
 company: Cline
 logo: /logos/cline.svg
-transports: ['stdio', 'streamable-http']
+transports:
+  - stdio
+  - streamable-http
 configFormat: json
 configLocation: VS Code Settings → Cline → MCP Servers
 accuracy: 4
 order: 6
 ---
-
 ## Configuration
 
 Cline is a VS Code extension with its own MCP configuration.

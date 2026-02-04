@@ -1,15 +1,21 @@
 ---
+type: note
+updated: 2026-01-03
+area: servers
+project: ha-mcp-extended
 name: Raycast
 company: Raycast
 logo: /logos/raycast.svg
-transports: ['stdio', 'sse', 'streamable-http']
+transports:
+  - stdio
+  - sse
+  - streamable-http
 configFormat: json
 configLocation: Manage MCP Servers → Show Config File in Finder
 accuracy: 4
 order: 12
 httpNote: HTTP transport is experimental (requires v1.100.0+)
 ---
-
 ## Configuration
 
 Raycast supports MCP servers via its Extensions system (macOS only).

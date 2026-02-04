@@ -1,14 +1,20 @@
 ---
+type: note
+updated: 2026-01-03
+area: servers
+project: ha-mcp-extended
 name: VS Code
 company: Microsoft
 logo: /logos/vscode.svg
-transports: ['stdio', 'sse', 'streamable-http']
+transports:
+  - stdio
+  - sse
+  - streamable-http
 configFormat: json
 configLocation: Settings → Extensions → GitHub Copilot → MCP
 accuracy: 5
 order: 4
 ---
-
 ## Configuration
 
 VS Code with GitHub Copilot supports MCP servers via settings.json or the UI.

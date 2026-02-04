@@ -1,11 +1,15 @@
 ---
+type: note
+updated: 2026-01-03
+area: servers
+project: ha-mcp-extended
 name: Cloudflare Tunnel
 description: Expose ha-mcp to the internet securely
 icon: cloudflare
-forConnections: ['remote']
+forConnections:
+  - remote
 order: 4
 ---
-
 ## Overview
 
 Cloudflare Tunnel creates a secure outbound connection from your network to Cloudflare's edge. No port forwarding or public IP required.

@@ -1,14 +1,20 @@
 ---
+type: note
+updated: 2026-01-03
+area: servers
+project: ha-mcp-extended
 name: Windsurf
 company: Codeium
 logo: /logos/windsurf.svg
-transports: ['stdio', 'sse', 'streamable-http']
+transports:
+  - stdio
+  - sse
+  - streamable-http
 configFormat: json
 configLocation: ~/.codeium/windsurf/mcp_config.json
 accuracy: 4
 order: 5
 ---
-
 ## Configuration
 
 Windsurf uses a JSON configuration file similar to Claude Desktop.

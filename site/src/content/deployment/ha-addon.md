@@ -1,11 +1,16 @@
 ---
+type: note
+updated: 2026-01-03
+area: servers
+project: ha-mcp-extended
 name: Home Assistant Add-on
 description: Run ha-mcp inside Home Assistant OS
 icon: home-assistant
-forConnections: ['network', 'remote']
+forConnections:
+  - network
+  - remote
 order: 3
 ---
-
 ## Overview
 
 The easiest way to run ha-mcp if you use Home Assistant OS. The add-on:

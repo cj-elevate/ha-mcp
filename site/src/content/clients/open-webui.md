@@ -1,14 +1,18 @@
 ---
+type: note
+updated: 2026-01-03
+area: servers
+project: ha-mcp-extended
 name: Open WebUI
 company: Open WebUI
 logo: /logos/open-webui.svg
-transports: ['streamable-http']
+transports:
+  - streamable-http
 configFormat: ui
 accuracy: 4
 order: 14
 httpNote: Requires Streamable HTTP - local or remote server
 ---
-
 ## Configuration
 
 Open WebUI natively supports MCP servers via Streamable HTTP transport.

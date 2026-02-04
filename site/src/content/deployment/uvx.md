@@ -1,11 +1,16 @@
 ---
+type: note
+updated: 2026-01-03
+area: servers
+project: ha-mcp-extended
 name: uvx (Python)
 description: Run ha-mcp directly via Python package manager
 icon: python
-forConnections: ['local', 'network']
+forConnections:
+  - local
+  - network
 order: 1
 ---
-
 ## For Local Machine (stdio)
 
 ha-mcp is spawned by your AI client. Just configure your client with:

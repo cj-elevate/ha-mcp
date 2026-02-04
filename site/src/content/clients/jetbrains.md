@@ -1,15 +1,19 @@
 ---
+type: note
+updated: 2026-01-03
+area: servers
+project: ha-mcp-extended
 name: JetBrains IDEs
 company: JetBrains
 logo: /logos/jetbrains.svg
-transports: ['stdio']
+transports:
+  - stdio
 configFormat: json
 configLocation: Settings → Tools → AI Assistant → MCP Servers
 accuracy: 4
 order: 9
 httpNote: stdio only - use mcp-remote for HTTP servers
 ---
-
 ## Configuration
 
 JetBrains IDEs (IntelliJ, PyCharm, WebStorm, etc.) support MCP via the AI Assistant plugin.
