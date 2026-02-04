@@ -1,3 +1,9 @@
+---
+type: note
+updated: 2026-01-03
+area: servers
+project: ha-mcp-extended
+---
 ## What does this PR do?
 
 <!-- Brief description of your changes -->

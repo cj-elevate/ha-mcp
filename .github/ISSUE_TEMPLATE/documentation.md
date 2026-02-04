@@ -1,12 +1,14 @@
 ---
+type: note
+updated: 2026-01-03
+area: servers
+project: ha-mcp-extended
 name: Documentation Issue
 about: Report errors, unclear instructions, or suggest improvements to documentation
-title: '[DOCS] '
+title: [DOCS] 
 labels: documentation
-assignees: ''
-
+assignees: 
 ---
-
 ## Documentation Type
 
 - [ ] **Setup Wizard** - Issue with [ha-mcp setup wizard](https://homeassistant-ai.github.io/ha-mcp/setup/)

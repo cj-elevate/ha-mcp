@@ -1,12 +1,14 @@
 ---
+type: note
+updated: 2026-01-03
+area: servers
+project: ha-mcp-extended
 name: Bug Report
 about: Create a report to help us improve
-title: '[BUG] '
+title: [BUG] 
 labels: bug
 assignees: julienld
-
 ---
-
 ## Before You Start
 
 > **Use the `ha_bug_report` tool!**
