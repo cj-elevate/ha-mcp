@@ -13,6 +13,19 @@ All notable changes to this server will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-02-14] - Entity Removal Tool
+
+### Added
+
+- `ha_remove_entity` tool: remove entities from the entity registry
+  - Dry-run mode (confirm=false): preview what would be removed with registry details
+  - Execute mode (confirm=true): remove via `config/entity_registry/remove` WebSocket API
+  - Batch support (up to 50 entities) with per-entity status tracking
+  - Bounded concurrency via `asyncio.Semaphore(10)` for safe batch operations
+  - Idempotent: already-removed entities treated as success
+
+---
+
 ## [2026-01-02] - v2 Thread Safety Fixes
 
 ### Fixed

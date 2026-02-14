@@ -5,6 +5,7 @@ This module provides tools for managing entity lifecycle and properties
 via the Home Assistant entity registry API.
 """
 
+import asyncio
 import logging
 from typing import Annotated, Any
 
@@ -351,8 +352,6 @@ def register_entity_tools(mcp: Any, client: Any, **kwargs: Any) -> None:
                     }
 
             # Bulk case - fetch all entities
-            import asyncio
-
             logger.info(f"Getting entity registry entries for {len(entity_ids)} entities")
             results = await asyncio.gather(
                 *[_fetch_entity(eid) for eid in entity_ids],
@@ -395,6 +394,285 @@ def register_entity_tools(mcp: Any, client: Any, **kwargs: Any) -> None:
 
         except Exception as e:
             logger.error(f"Error getting entity: {e}")
+            return exception_to_structured_error(
+                e, context={"entity_id": entity_id if isinstance(entity_id, str) else entity_ids}
+            )
+
+    @mcp.tool(
+        annotations={
+            "destructiveHint": True,
+            "idempotentHint": True,
+            "tags": ["entity"],
+            "title": "Remove Entity",
+        }
+    )
+    @log_tool_usage
+    async def ha_remove_entity(
+        entity_id: Annotated[
+            str | list[str],
+            Field(
+                description="Entity ID or list of entity IDs to remove from the registry (e.g., 'sensor.old_sensor' or ['sensor.a', 'sensor.b'])"
+            ),
+        ],
+        confirm: Annotated[
+            bool | str,
+            Field(
+                description="Must be True to execute removal. False (default) = dry-run preview showing what would be removed."
+            ),
+        ] = False,
+    ) -> dict[str, Any]:
+        """Remove entities from the Home Assistant entity registry.
+
+        Permanently removes entity registry entries. This does NOT remove the
+        underlying integration or device -- only the entity record itself.
+
+        MODES:
+        - Dry-run (confirm=False): Preview what would be removed with registry details
+        - Execute (confirm=True): Actually remove the entities
+
+        WARNING: Entities backed by active integrations may reappear after HA restart.
+        To fully remove an integration's entities, use ha_delete_config_entry() instead.
+
+        EXAMPLES:
+        - Preview: ha_remove_entity("sensor.old_sensor")
+        - Remove: ha_remove_entity("sensor.old_sensor", confirm=True)
+        - Batch preview: ha_remove_entity(["sensor.a", "sensor.b", "sensor.c"])
+        - Batch remove: ha_remove_entity(["sensor.a", "sensor.b"], confirm=True)
+
+        RELATED TOOLS:
+        - ha_get_entity(): Inspect entity registry details
+        - ha_search_entities(): Find entities by name, domain, or area
+        - ha_delete_config_entry(): Remove an entire integration (all its entities)
+        - ha_set_entity(enabled=False): Disable without removing
+        """
+        try:
+            # Coerce confirm parameter
+            confirm_bool = coerce_bool_param(confirm, "confirm", default=False)
+
+            # Parse and validate entity_id parameter
+            entity_ids: list[str]
+            is_bulk: bool
+
+            if isinstance(entity_id, str):
+                entity_ids = [entity_id]
+                is_bulk = False
+            elif isinstance(entity_id, list):
+                if not entity_id:
+                    return {
+                        "success": True,
+                        "dry_run": not confirm_bool,
+                        "count": 0,
+                        "message": "No entities specified",
+                    }
+                if not all(isinstance(e, str) for e in entity_id):
+                    return create_error_response(
+                        ErrorCode.VALIDATION_INVALID_PARAMETER,
+                        "All entity_id values must be strings",
+                    )
+                entity_ids = entity_id
+                is_bulk = True
+            else:
+                return create_error_response(
+                    ErrorCode.VALIDATION_INVALID_PARAMETER,
+                    f"entity_id must be string or list of strings, got {type(entity_id).__name__}",
+                )
+
+            # Validate entity_id format: must contain '.' separator
+            invalid_ids = [eid for eid in entity_ids if "." not in eid]
+            if invalid_ids:
+                return create_error_response(
+                    ErrorCode.VALIDATION_INVALID_PARAMETER,
+                    f"Invalid entity_id format (must contain '.' separator): {invalid_ids}",
+                )
+
+            # Cap batch size at 50
+            if len(entity_ids) > 50:
+                return create_error_response(
+                    ErrorCode.VALIDATION_INVALID_PARAMETER,
+                    f"Batch size {len(entity_ids)} exceeds maximum of 50. Split into multiple calls.",
+                )
+
+            # Deduplicate while preserving order
+            seen: set[str] = set()
+            unique_ids: list[str] = []
+            for eid in entity_ids:
+                if eid not in seen:
+                    seen.add(eid)
+                    unique_ids.append(eid)
+            entity_ids = unique_ids
+
+            # Bounded concurrency for registry lookups
+            semaphore = asyncio.Semaphore(10)
+
+            async def _lookup_entity(eid: str) -> dict[str, Any]:
+                """Fetch entity registry info for preview."""
+                async with semaphore:
+                    message: dict[str, Any] = {
+                        "type": "config/entity_registry/get",
+                        "entity_id": eid,
+                    }
+                    result = await client.send_websocket_message(message)
+
+                    if not result.get("success"):
+                        return {
+                            "entity_id": eid,
+                            "found": False,
+                            "error": "Entity not found in registry",
+                        }
+
+                    entry = result.get("result", {})
+                    return {
+                        "entity_id": eid,
+                        "found": True,
+                        "name": entry.get("name") or entry.get("original_name"),
+                        "platform": entry.get("platform"),
+                        "device_id": entry.get("device_id"),
+                        "disabled_by": entry.get("disabled_by"),
+                    }
+
+            async def _remove_entity(eid: str) -> dict[str, Any]:
+                """Remove a single entity from the registry."""
+                async with semaphore:
+                    message: dict[str, Any] = {
+                        "type": "config/entity_registry/remove",
+                        "entity_id": eid,
+                    }
+                    result = await client.send_websocket_message(message)
+
+                    if result.get("success"):
+                        return {"entity_id": eid, "removed": True}
+
+                    error = result.get("error", {})
+                    error_msg = (
+                        error.get("message", str(error))
+                        if isinstance(error, dict)
+                        else str(error)
+                    )
+                    # Treat "not found" as idempotent success
+                    if "not found" in error_msg.lower() or "unknown" in error_msg.lower():
+                        return {
+                            "entity_id": eid,
+                            "removed": True,
+                            "note": "Entity was already removed",
+                        }
+                    return {
+                        "entity_id": eid,
+                        "removed": False,
+                        "error": error_msg,
+                    }
+
+            # Preview phase: look up all entities
+            logger.info(f"Looking up {len(entity_ids)} entities for removal preview")
+            lookup_results = await asyncio.gather(
+                *[_lookup_entity(eid) for eid in entity_ids],
+                return_exceptions=True,
+            )
+
+            previews: list[dict[str, Any]] = []
+            lookup_errors: list[dict[str, Any]] = []
+
+            for eid, result in zip(entity_ids, lookup_results, strict=True):
+                if isinstance(result, BaseException):
+                    lookup_errors.append({"entity_id": eid, "error": str(result)})
+                elif result.get("found"):
+                    previews.append(result)
+                else:
+                    lookup_errors.append({"entity_id": eid, "error": result.get("error", "Not found")})
+
+            # Dry-run mode: return preview
+            if not confirm_bool:
+                response: dict[str, Any] = {
+                    "dry_run": True,
+                    "count": len(previews),
+                    "entities": previews,
+                    "message": "Set confirm=True to execute removal.",
+                    "warning": "Entities backed by active integrations may reappear after HA restart.",
+                }
+                if lookup_errors:
+                    response["not_found"] = lookup_errors
+                    response["not_found_count"] = len(lookup_errors)
+
+                # Single entity: flatten response
+                if not is_bulk and len(previews) == 1:
+                    entity = previews[0]
+                    return {
+                        "dry_run": True,
+                        **entity,
+                        "message": "Set confirm=True to execute removal.",
+                        "warning": "Entities backed by active integrations may reappear after HA restart.",
+                    }
+                if not is_bulk and not previews:
+                    return {
+                        "dry_run": True,
+                        "entity_id": entity_ids[0],
+                        "found": False,
+                        "error": "Entity not found in registry. Nothing to remove.",
+                        "suggestions": [
+                            "Use ha_search_entities() to find valid entity IDs",
+                            "The entity may have already been removed",
+                        ],
+                    }
+
+                return response
+
+            # Execute mode: remove found entities
+            if not previews:
+                return {
+                    "success": True,
+                    "removed_count": 0,
+                    "message": "No entities found to remove.",
+                    "not_found": lookup_errors,
+                }
+
+            found_ids = [p["entity_id"] for p in previews]
+            logger.info(f"Removing {len(found_ids)} entities from registry")
+            remove_results = await asyncio.gather(
+                *[_remove_entity(eid) for eid in found_ids],
+                return_exceptions=True,
+            )
+
+            removed: list[dict[str, Any]] = []
+            errors: list[dict[str, Any]] = []
+
+            for eid, result in zip(found_ids, remove_results, strict=True):
+                if isinstance(result, BaseException):
+                    errors.append({"entity_id": eid, "error": str(result)})
+                elif result.get("removed"):
+                    removed.append(result)
+                else:
+                    errors.append(result)
+
+            # Single entity: flat response
+            if not is_bulk:
+                if removed:
+                    return {
+                        "success": True,
+                        **removed[0],
+                        "message": f"Entity {removed[0]['entity_id']} removed from registry.",
+                    }
+                elif errors:
+                    return {
+                        "success": False,
+                        **errors[0],
+                        "message": f"Failed to remove entity: {errors[0].get('error')}",
+                    }
+
+            # Batch response
+            response = {
+                "success": len(errors) == 0,
+                "removed_count": len(removed),
+                "error_count": len(errors),
+                "removed": removed,
+            }
+            if errors:
+                response["errors"] = errors
+            if lookup_errors:
+                response["not_found"] = lookup_errors
+
+            return response
+
+        except Exception as e:
+            logger.error(f"Error removing entity: {e}")
             return exception_to_structured_error(
                 e, context={"entity_id": entity_id if isinstance(entity_id, str) else entity_ids}
             )
