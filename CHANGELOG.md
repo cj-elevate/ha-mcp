@@ -13,6 +13,16 @@ All notable changes to this server will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [2026-02-16] - Config Entry Deletion Fix
+
+### Fixed
+
+- `ha_delete_config_entry` was using non-existent WebSocket command `config_entries/delete`
+- Switched to REST API (`DELETE /config/config_entries/entry/{id}`) which is the only supported method
+- Added proper 404/405 error handling in `rest_client.delete_config_entry()`
+
+---
+
 ## [2026-02-14] - Entity Removal Tool
 
 ### Added
