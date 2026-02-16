@@ -684,6 +684,53 @@ class HomeAssistantClient:
             status_code=404,
         )
 
+    async def delete_config_entry(self, entry_id: str) -> dict[str, Any]:
+        """
+        Delete a config entry.
+
+        Uses the REST API (DELETE /config/config_entries/entry/{entry_id})
+        because Home Assistant does not expose config entry deletion via WebSocket.
+
+        Args:
+            entry_id: Config entry ID to delete
+
+        Returns:
+            Deletion result with require_restart flag
+
+        Raises:
+            HomeAssistantAPIError: If entry not found, method blocked, or API error
+        """
+        logger.debug(f"Deleting config entry: {entry_id}")
+
+        try:
+            response = await self._request(
+                "DELETE", f"/config/config_entries/entry/{entry_id}"
+            )
+            return {
+                "entry_id": entry_id,
+                "require_restart": response.get("require_restart", False),
+                "operation": "deleted",
+            }
+        except HomeAssistantAPIError as e:
+            if e.status_code == 404:
+                raise HomeAssistantAPIError(
+                    f"Config entry not found: {entry_id}",
+                    status_code=404,
+                )
+            elif e.status_code == 405:
+                raise HomeAssistantAPIError(
+                    f"Cannot delete config entry '{entry_id}': The HTTP DELETE method is blocked. "
+                    f"This typically occurs when running ha-mcp as a Home Assistant add-on, because "
+                    f"the Supervisor ingress proxy only allows GET and POST requests. "
+                    f"WORKAROUNDS: "
+                    f"(1) Use ha-mcp via pip, Docker, or as an external MCP server instead of the add-on. "
+                    f"(2) Use a long-lived access token to connect directly to Home Assistant's API. "
+                    f"(3) Disable the integration via ha_set_integration_enabled(entry_id, enabled=False) "
+                    f"and delete it manually via the Home Assistant UI (Settings > Devices & Services).",
+                    status_code=405,
+                )
+            raise
+
     async def send_websocket_message(self, message: dict[str, Any]) -> dict[str, Any]:
         """Send message via WebSocket and wait for response.
 

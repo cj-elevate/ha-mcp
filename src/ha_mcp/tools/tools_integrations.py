@@ -260,25 +260,9 @@ def register_integration_tools(mcp: Any, client: Any, **kwargs: Any) -> None:
                     "warning": "This will permanently delete the config entry. This cannot be undone.",
                 }
 
-            message = {
-                "type": "config_entries/delete",
-                "entry_id": entry_id,
-            }
+            result = await client.delete_config_entry(entry_id)
 
-            result = await client.send_websocket_message(message)
-
-            if not result.get("success"):
-                error_msg = result.get("error", {})
-                if isinstance(error_msg, dict):
-                    error_msg = error_msg.get("message", str(error_msg))
-                return {
-                    "success": False,
-                    "error": f"Failed to delete config entry: {error_msg}",
-                    "entry_id": entry_id,
-                }
-
-            # Get result info
-            require_restart = result.get("result", {}).get("require_restart", False)
+            require_restart = result.get("require_restart", False)
 
             return {
                 "success": True,
