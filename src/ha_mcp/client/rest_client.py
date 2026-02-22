@@ -649,6 +649,126 @@ class HomeAssistantClient:
             "POST", f"/config/config_entries/flow/{flow_id}", json=user_input
         )
 
+    # Options Flow API (integration-level settings)
+
+    async def start_options_flow(self, entry_id: str) -> dict[str, Any]:
+        """
+        Start an options flow for a config entry.
+
+        Options flows let you view and modify integration-level settings
+        (e.g., MQTT broker config, polling intervals) without removing
+        and re-adding the integration.
+
+        Args:
+            entry_id: Config entry ID (from get_config_entry or ha_get_integration)
+
+        Returns:
+            Flow data with flow_id, type, step_id, data_schema, and current values
+
+        Raises:
+            HomeAssistantAPIError: If entry not found or doesn't support options
+        """
+        logger.debug(f"Starting options flow for entry: {entry_id}")
+        return await self._request(
+            "POST", "/config/config_entries/options/flow",
+            json={"handler": entry_id},
+        )
+
+    async def submit_options_flow_step(
+        self, flow_id: str, user_input: dict[str, Any]
+    ) -> dict[str, Any]:
+        """
+        Submit data for an options flow step.
+
+        Args:
+            flow_id: Flow ID from start_options_flow or previous step
+            user_input: Form data for current step (must include ALL fields,
+                        not just changed ones - options flow is full-replace)
+
+        Returns:
+            Flow result: type = "create_entry" | "form" | "abort"
+
+        Raises:
+            HomeAssistantAPIError: If flow submission fails
+        """
+        logger.debug(f"Submitting options flow step for flow_id: {flow_id}")
+        return await self._request(
+            "POST", f"/config/config_entries/options/flow/{flow_id}",
+            json=user_input,
+        )
+
+    async def abort_options_flow(self, flow_id: str) -> dict[str, Any]:
+        """
+        Abort an in-progress options flow.
+
+        Used to clean up after reading options without applying changes.
+
+        Args:
+            flow_id: Flow ID to abort
+
+        Returns:
+            Abort confirmation
+
+        Raises:
+            HomeAssistantAPIError: If flow not found or already completed
+        """
+        logger.debug(f"Aborting options flow: {flow_id}")
+        return await self._request(
+            "DELETE", f"/config/config_entries/options/flow/{flow_id}",
+        )
+
+    # Subentry Flow API (per-device config within an integration)
+
+    async def start_subentry_flow(
+        self, entry_id: str, subentry_type: str
+    ) -> dict[str, Any]:
+        """
+        Start a subentry flow for a config entry.
+
+        Subentry flows manage per-device or per-entity configuration within
+        an integration (e.g., individual MQTT devices, AI conversation agents).
+        Requires HA 2025.x+.
+
+        Args:
+            entry_id: Config entry ID
+            subentry_type: Subentry type (integration-specific, e.g., "device")
+
+        Returns:
+            Flow data with flow_id, type, step_id, data_schema
+
+        Raises:
+            HomeAssistantAPIError: If entry not found or subentry type invalid
+        """
+        logger.debug(
+            f"Starting subentry flow for entry: {entry_id}, type: {subentry_type}"
+        )
+        return await self._request(
+            "POST", "/config/config_entries/subentries/flow",
+            json={"handler": [entry_id, subentry_type]},
+        )
+
+    async def submit_subentry_flow_step(
+        self, flow_id: str, user_input: dict[str, Any]
+    ) -> dict[str, Any]:
+        """
+        Submit data for a subentry flow step.
+
+        Args:
+            flow_id: Flow ID from start_subentry_flow or previous step
+            user_input: Form data for current step
+
+        Returns:
+            Flow result: type = "create_entry" | "form" | "abort"
+
+        Raises:
+            HomeAssistantAPIError: If flow submission fails
+        """
+        logger.debug(f"Submitting subentry flow step for flow_id: {flow_id}")
+        return await self._request(
+            "POST", f"/config/config_entries/subentries/flow/{flow_id}",
+            json=user_input,
+        )
+
     async def get_config_entry(self, entry_id: str) -> dict[str, Any]:
         """
         Get config entry details.
