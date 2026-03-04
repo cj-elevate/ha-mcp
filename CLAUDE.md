@@ -5,6 +5,7 @@ project: ha-mcp-extended
 area: servers
 path: D:\servers\ha-mcp-extended
 status: active
+tags: [ha, mcp, tools, config, entities, services, helpers]
 ---
 # ha-mcp-extended
 
