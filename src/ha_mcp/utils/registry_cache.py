@@ -1,14 +1,20 @@
 """
-Registry-based caching for Home Assistant entity search optimization.
+State-based caching for Home Assistant entity search optimization.
 
 This module provides a high-performance cache for entity search operations by:
-1. Using entity_registry/list instead of get_states (much smaller payload)
-2. TTL-based caching with stale-while-revalidate
-3. Singleflight pattern to prevent concurrent fetch storms
+1. Using get_states (live state machine) as primary source for complete entity coverage
+2. Overlaying registry metadata for friendly names, area IDs, and device associations
+3. TTL-based caching with stale-while-revalidate
+4. Singleflight pattern to prevent concurrent fetch storms
+
+Why get_states instead of entity_registry/list:
+- entity_registry/list only includes entities with unique_id (missing HACS, template entities)
+- get_states queries the live state machine, including ALL entities regardless of registry status
+- Templates like states.update use the state machine, so search should match that behavior
 
 Performance impact:
 - get_states: ~700 entities × ~1KB each = ~700KB payload
-- entity_registry/list: ~700 entities × ~200 bytes = ~140KB payload (5x smaller)
+- entity_registry/list: ~700 entities × ~200 bytes = ~140KB payload (5x smaller but incomplete)
 - Cache hit: <1ms latency vs 100-500ms for API call
 """
 
@@ -116,10 +122,16 @@ class HARegistryCache:
             "friendly_name": "Living Room Light",
             "domain": "light",
             "area_id": "living_room",
-            "disabled": False,
-            "attributes": {},  # Empty for search - state not needed
-            "state": "unknown",  # Placeholder - not fetched
+            "area_name": "Living Room",  # From area registry or stale cache
+            "device_id": "abc123",  # From entity registry or stale cache
+            "attributes": {"friendly_name": ..., "area_id": ...},
+            "state": "on",  # Actual state from state machine
         }
+
+        The cache uses get_states() as the primary source for complete entity coverage.
+        Registry metadata (friendly names, areas, devices) is overlaid from entity/area
+        registries. If registry fetches fail, stale metadata is preserved instead of
+        being discarded (stale-while-revalidate pattern).
 
         Returns:
             List of entity dicts suitable for fuzzy search
@@ -170,12 +182,31 @@ class HARegistryCache:
         return await asyncio.shield(refresh_task)
 
     async def _refresh(self) -> list[dict[str, Any]]:
-        """Fetch registries and build search-friendly entity list."""
-        logger.debug("Refreshing registry cache...")
+        """Fetch states and overlay registry metadata to build complete entity list."""
+        logger.debug("Refreshing entity cache from state machine...")
         start_time = time.monotonic()
 
         try:
-            # Fetch entity and area registries SEQUENTIALLY
+            # Fetch live states as PRIMARY source (includes ALL entities)
+            # This matches what templates like states.update see
+            try:
+                states = await asyncio.wait_for(
+                    self._client.get_states(),
+                    timeout=30.0
+                )
+            except asyncio.TimeoutError:
+                states_exc = Exception("get_states timed out after 30s")
+                logger.error(f"Failed to fetch states: {states_exc}")
+                if self._search_entities:
+                    return self._search_entities
+                raise states_exc
+            except Exception as e:
+                logger.error(f"Failed to fetch states: {e}")
+                if self._search_entities:
+                    return self._search_entities
+                raise
+
+            # Fetch entity and area registries SEQUENTIALLY for metadata overlay
             # (parallel WebSocket calls cause connection issues - each call creates new WS)
             try:
                 entity_result = await asyncio.wait_for(
@@ -184,8 +215,14 @@ class HARegistryCache:
                 )
             except asyncio.TimeoutError:
                 entity_result = Exception("Entity registry fetch timed out after 30s")
+                logger.warning("Entity registry fetch timed out - preserving cached metadata (friendly names may be incomplete)")
             except Exception as e:
                 entity_result = e
+                logger.warning(f"Entity registry fetch failed: {e} - preserving cached metadata (friendly names may be incomplete)")
+
+            # Check for non-exception but failed response (e.g., {"success": False})
+            if not isinstance(entity_result, Exception) and not entity_result.get("success"):
+                logger.warning("Entity registry returned success=False - preserving cached metadata (friendly names may be incomplete)")
 
             try:
                 area_result = await asyncio.wait_for(
@@ -194,27 +231,31 @@ class HARegistryCache:
                 )
             except asyncio.TimeoutError:
                 area_result = Exception("Area registry fetch timed out after 30s")
+                logger.warning("Area registry fetch timed out - preserving cached metadata (area names may be incomplete)")
             except Exception as e:
                 area_result = e
+                logger.warning(f"Area registry fetch failed: {e} - preserving cached metadata (area names may be incomplete)")
 
-            # Process entity registry
-            if isinstance(entity_result, Exception):
-                logger.error(f"Failed to fetch entity registry: {entity_result}")
-                # If we have existing data, keep it
-                if self._search_entities:
-                    return self._search_entities
-                raise entity_result
+            # Check for non-exception but failed response (e.g., {"success": False})
+            if not isinstance(area_result, Exception) and not area_result.get("success"):
+                logger.warning("Area registry returned success=False - preserving cached metadata (area names may be incomplete)")
 
-            if not entity_result.get("success"):
-                error = entity_result.get("error", "Unknown error")
-                logger.error(f"Entity registry fetch failed: {error}")
-                if self._search_entities:
-                    return self._search_entities
-                raise RuntimeError(f"Entity registry fetch failed: {error}")
+            # Build registry lookup maps for metadata overlay
+            # Preserve old registry data if fetch failed (stale-while-revalidate pattern)
+            registry_by_entity: dict[str, dict[str, Any]] = {}
+            if not isinstance(entity_result, Exception) and entity_result.get("success"):
+                for entry in entity_result.get("result", []):
+                    entity_id = entry.get("entity_id")
+                    if entity_id:
+                        registry_by_entity[entity_id] = entry
+            elif self._entity_registry:
+                # Rebuild from cached registry data (preserve stale metadata)
+                for entry in self._entity_registry:
+                    entity_id = entry.get("entity_id")
+                    if entity_id:
+                        registry_by_entity[entity_id] = entry
+                logger.debug("Using stale entity registry metadata due to fetch failure")
 
-            entity_registry = entity_result.get("result", [])
-
-            # Process area registry (optional, for area_id lookups)
             area_map: dict[str, str] = {}
             if not isinstance(area_result, Exception) and area_result.get("success"):
                 for area in area_result.get("result", []):
@@ -222,29 +263,44 @@ class HARegistryCache:
                     area_name = area.get("name", area_id)
                     if area_id:
                         area_map[area_id] = area_name
+            elif self._area_registry:
+                # Rebuild from cached area data (preserve stale metadata)
+                for area in self._area_registry:
+                    area_id = area.get("area_id")
+                    area_name = area.get("name", area_id)
+                    if area_id:
+                        area_map[area_id] = area_name
+                logger.debug("Using stale area registry metadata due to fetch failure")
 
-            # Convert to search-friendly format
+            # Convert states to search-friendly format with registry overlay
             search_entities = []
-            for entry in entity_registry:
-                entity_id = entry.get("entity_id", "")
+            for state in states:
+                entity_id = state.get("entity_id", "")
                 if not entity_id:
                     continue
 
-                # Skip disabled entities
-                if entry.get("disabled_by"):
+                domain = entity_id.split(".")[0] if "." in entity_id else ""
+                attributes = state.get("attributes", {})
+                current_state = state.get("state", "unknown")
+
+                # Get registry entry for metadata (may not exist for all entities)
+                registry_entry = registry_by_entity.get(entity_id, {})
+
+                # Skip disabled entities based on registry disabled_by flag
+                if registry_entry.get("disabled_by"):
                     continue
 
-                domain = entity_id.split(".")[0] if "." in entity_id else ""
-
-                # Get friendly name: prefer user's custom name, then original_name, then entity_id
+                # Get friendly name with priority: registry custom name > registry original_name > state attributes > entity_id
                 friendly_name = (
-                    entry.get("name")  # User's custom name
-                    or entry.get("original_name")  # Integration's default name
-                    or entity_id
+                    registry_entry.get("name")  # User's custom name in registry
+                    or registry_entry.get("original_name")  # Integration's default name in registry
+                    or attributes.get("friendly_name", entity_id)  # Fall back to state attribute
                 )
 
-                area_id = entry.get("area_id")
-                area_name = area_map.get(area_id, area_id) if area_id else None
+                # Get area_id from registry entry (not in state attributes)
+                reg_area_id = registry_entry.get("area_id")
+                area_id = reg_area_id
+                area_name = area_map.get(reg_area_id, reg_area_id) if reg_area_id else None
 
                 search_entities.append({
                     "entity_id": entity_id,
@@ -252,20 +308,27 @@ class HARegistryCache:
                     "domain": domain,
                     "area_id": area_id,
                     "area_name": area_name,
-                    "device_id": entry.get("device_id"),
+                    "device_id": registry_entry.get("device_id"),
                     # Compatibility with existing fuzzy_search format
                     "attributes": {
                         "friendly_name": friendly_name,
                         "area_id": area_id,
                     },
-                    "state": "unknown",  # Not fetched - search doesn't need it
+                    "state": current_state,  # Now includes actual state from state machine
                 })
 
-            # Update cache
+            # Update cache (preserve old registry data on fetch failure - stale-while-revalidate)
             now = time.monotonic()
             async with self._lock:
-                self._entity_registry = entity_registry
-                self._area_registry = area_result.get("result", []) if not isinstance(area_result, Exception) else []
+                # Only update registry caches if fetch succeeded
+                if not isinstance(entity_result, Exception) and entity_result.get("success"):
+                    self._entity_registry = entity_result.get("result", [])
+                # else: preserve existing self._entity_registry (stale metadata)
+
+                if not isinstance(area_result, Exception) and area_result.get("success"):
+                    self._area_registry = area_result.get("result", [])
+                # else: preserve existing self._area_registry (stale metadata)
+
                 self._search_entities = search_entities
                 self._fetched_at = now
                 self._expires_at = now + self._ttl_s
@@ -273,13 +336,14 @@ class HARegistryCache:
 
             elapsed = (time.monotonic() - start_time) * 1000
             logger.info(
-                f"Registry cache refreshed: {len(search_entities)} entities in {elapsed:.1f}ms"
+                f"Entity cache refreshed: {len(search_entities)} entities in {elapsed:.1f}ms "
+                f"({len(registry_by_entity)} with registry metadata)"
             )
 
             return search_entities
 
         except Exception as e:
-            logger.error(f"Registry cache refresh failed: {e}")
+            logger.error(f"Entity cache refresh failed: {e}")
             # Return existing data if available
             if self._search_entities:
                 logger.warning("Using stale cache due to refresh failure")

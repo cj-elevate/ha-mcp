@@ -2,10 +2,14 @@
 Smart search tools for Home Assistant MCP server.
 
 Performance optimizations:
-1. Uses registry cache instead of get_states() (5x smaller payload)
+1. Uses registry cache with TTL-based caching (stale-while-revalidate)
 2. Offloads fuzzy search to thread pool (prevents event loop starvation)
 3. Adds timeout wrapper (prevents indefinite hangs)
-4. Fetches live state only for top N results (hybrid approach)
+4. Cache includes live state from state machine (no redundant get_states calls)
+
+Note: The cache uses get_states() as the primary source to ensure complete
+entity coverage (including HACS and template entities that lack registry entries).
+Registry metadata is overlaid for friendly names and area associations.
 """
 
 import asyncio
@@ -55,7 +59,7 @@ class SmartSearchTools:
 
         self.fuzzy_searcher = create_fuzzy_searcher(threshold=fuzzy_threshold)
 
-        # Registry cache for fast entity lookups (5x smaller than get_states)
+        # Registry cache with TTL-based caching and stale-while-revalidate
         self.registry_cache = get_registry_cache(self.client)
 
     async def smart_entity_search(
@@ -65,10 +69,10 @@ class SmartSearchTools:
         Advanced entity search with fuzzy matching and typo tolerance.
 
         PERFORMANCE OPTIMIZED:
-        1. Uses registry cache (140KB) instead of get_states (700KB)
+        1. Uses TTL-based registry cache with stale-while-revalidate
         2. Offloads fuzzy search to thread pool (no event loop starvation)
         3. 5s timeout prevents indefinite hangs
-        4. Fetches live state only for top N matches (hybrid approach)
+        4. Cache includes live state from state machine (no redundant fetches)
 
         Args:
             query: Search query (can be partial, with typos)
@@ -80,7 +84,7 @@ class SmartSearchTools:
             Dictionary with search results and metadata
         """
         try:
-            # Get entities from registry cache (5x smaller, cached)
+            # Get entities from registry cache (cached with TTL)
             try:
                 entities = await asyncio.wait_for(
                     self.registry_cache.get_search_entities(),
