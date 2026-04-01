@@ -1,6 +1,6 @@
 ---
 type: project
-updated: 2026-01-03
+updated: 2026-03-23
 project: ha-mcp-extended
 area: servers
 path: D:\servers\ha-mcp-extended
@@ -11,7 +11,7 @@ tags: [ha, mcp, tools, config, entities, services, helpers]
 
 ## Purpose
 
-Fork of homeassistant-ai/ha-mcp providing 80+ MCP tools for Home Assistant control, automation management, and system monitoring via natural language.
+Fork of homeassistant-ai/ha-mcp providing 104 MCP tools for Home Assistant control, automation management,            system monitoring via natural language.
 
 ---
 
