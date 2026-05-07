@@ -107,7 +107,7 @@ tool's hot name if available. Enable scope first: `enable_scopes(["ha"])`.
   - Registry cache (5x smaller than get_states)
   - Thread pool for CPU-heavy fuzzy matching
   - 5s timeout to prevent hangs
-  - rapidfuzz (C++) for 10-100x faster Levenshtein
+  - stdlib difflib (zero external dependencies)
 
 ---
 
