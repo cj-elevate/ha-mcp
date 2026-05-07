@@ -182,9 +182,10 @@ def register_search_tools(mcp, client, **kwargs):
                             }
                         )
 
-                    matches, total_matches = fuzzy_searcher.search_entities(
+                    matches = fuzzy_searcher.search_entities(
                         entities_for_search, query, limit
                     )
+                    total_matches = len(matches)
 
                     # Format matches similar to smart_entity_search
                     results = []
