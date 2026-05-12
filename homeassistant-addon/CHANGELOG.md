@@ -3,6 +3,38 @@
 <!-- version list -->
 
 
+## v6.0.1 (2026-05-12)
+
+### Changed
+
+- **claude**: Add Programmatic Testing section (STDIO proxy template)
+  ([`dbe43b0`](https://github.com/cj-elevate/ha-mcp/commit/dbe43b0b519059730f2b72a9ac5eb5a64489151c))
+
+### Fixed
+
+- **search**: Replace broken rapidfuzz/textdistance with stdlib difflib
+  ([`740684d`](https://github.com/cj-elevate/ha-mcp/commit/740684dabc9ae9c00251b2cbe9778b0b79abee74))
+
+---
+<details>
+<summary>Internal Changes</summary>
+
+
+### Chores
+
+- **hygiene**: Auto-commit 1 files [2026-05-10T14:00:27]
+  ([`90a5c14`](https://github.com/cj-elevate/ha-mcp/commit/90a5c14b8a8805a9f414dac8dc0d4e659a944409))
+- Update project status after fuzzy search fix
+  ([`41e7cf9`](https://github.com/cj-elevate/ha-mcp/commit/41e7cf94386acae195a036a3da99b792b4870ec2))
+- Add gitleaks baseline for upstream test fixtures
+  ([`01094ad`](https://github.com/cj-elevate/ha-mcp/commit/01094ad949caa2f4b0eecef3ebdb2e93cf03808b))
+- **search**: Remove stale backup file, update CLAUDE.md
+  ([`e23e8a5`](https://github.com/cj-elevate/ha-mcp/commit/e23e8a548e77aa5be6c78af91f21f1069bc43739))
+- **hygiene**: Auto-commit 13 files [2026-04-20T15:20:25]
+  ([`e6c3837`](https://github.com/cj-elevate/ha-mcp/commit/e6c3837e91486ccadad16fd8f66cf0925a067e14))
+</details>
+
+
 ## v6.0.0 (2026-04-07)
 
 ### Added
