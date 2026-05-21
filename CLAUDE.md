@@ -72,7 +72,7 @@ All tools use `HAError` exception class from `errors.py` with structured error r
 
 | Field | Value |
 |-------|-------|
-| Service | STDIO via master-mcp-proxy (PM2) |
+| Service | STDIO via master-mcp-proxy (NSSM) |
 | Host | n/a (STDIO, not HTTP) |
 | Auth | none (proxy-mediated) |
 | Secret Source | Proxy `.env` (if backend needs secrets) |
