@@ -1,10 +1,11 @@
 ---
 type: task_plan
-status: draft
+status: wontfix
 project: ha-mcp-extended
 path: D:\servers\ha-mcp-extended
 created: 2026-02-17
-updated: 2026-02-18
+updated: 2026-06-08
+archive_reason: "4mo draft, never started"
 ---
 
 # Add Storage-Aware MCP Tools to ha-mcp-extended
